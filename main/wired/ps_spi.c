@@ -4,6 +4,7 @@
  */
 
 #include <string.h>
+#include <esp_timer.h>
 #include "soc/io_mux_reg.h"
 #include "esp_private/periph_ctrl.h"
 #include <soc/spi_periph.h>
