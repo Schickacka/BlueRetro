@@ -1081,8 +1081,25 @@ void ps_spi_port_cfg(uint16_t mask) {
                 gpio_config_iram(&io_conf);
                 gpio_matrix_in(gpio_pin[i], signals[i], 0);
 
+                spi_init(&ps_ctrl_ports[i].cfg);
                 ps_ctrl_ports[i].idx = 0;
+                ps_ctrl_ports[i].mt_idx = 0;
                 ps_ctrl_ports[i].valid = 0;
+                ps_ctrl_ports[i].active_rx_buf = 0;
+                memset(ps_ctrl_ports[i].dev_id, 0x41, sizeof(ps_ctrl_ports[0].dev_id));
+                memset(ps_ctrl_ports[i].pend_dev_id, 0x41, sizeof(ps_ctrl_ports[0].pend_dev_id));
+                memset(ps_ctrl_ports[i].dev_desc, 0, sizeof(ps_ctrl_ports[0].dev_desc));
+                memset(ps_ctrl_ports[i].analog_btn, 0, sizeof(ps_ctrl_ports[0].analog_btn));
+                memset(ps_ctrl_ports[i].tx_buf, 0xFF, sizeof(ps_ctrl_ports[0].tx_buf));
+                ps_ctrl_ports[i].tx_buf[1] = 0x41;
+                ps_ctrl_ports[i].tx_buf[2] = 0x5A;
+                for (uint32_t j = 0; j < MT_PORT_MAX; j++) {
+                    ps_ctrl_ports[i].rumble_r_state[j] = 1;
+                    ps_ctrl_ports[i].rumble_l_state[j] = 1;
+                    ps_ctrl_ports[i].rumble_r_idx[j] = 0;
+                    ps_ctrl_ports[i].rumble_l_idx[j] = 1;
+                }
+                gpio_set_level_iram(ps_ctrl_ports[i].led_pin, 0);
                 set_output_state(i, 0);
             }
             else {
@@ -1092,7 +1109,13 @@ void ps_spi_port_cfg(uint16_t mask) {
                 gpio_set_direction_iram(dsr_pin[i], GPIO_MODE_INPUT);
 
                 ps_ctrl_ports[i].idx = 0;
+                ps_ctrl_ports[i].mt_idx = 0;
                 ps_ctrl_ports[i].valid = 0;
+                memset(ps_ctrl_ports[i].dev_id, 0x41, sizeof(ps_ctrl_ports[0].dev_id));
+                memset(ps_ctrl_ports[i].pend_dev_id, 0x41, sizeof(ps_ctrl_ports[0].pend_dev_id));
+                memset(ps_ctrl_ports[i].dev_desc, 0, sizeof(ps_ctrl_ports[0].dev_desc));
+                memset(ps_ctrl_ports[i].analog_btn, 0, sizeof(ps_ctrl_ports[0].analog_btn));
+                gpio_set_level_iram(ps_ctrl_ports[i].led_pin, 0);
                 set_output_state(i, 0);
             }
         }

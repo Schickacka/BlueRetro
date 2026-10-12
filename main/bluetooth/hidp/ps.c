@@ -215,6 +215,17 @@ void ps4_set_pending_led(uint8_t dev_id, uint32_t color) {
     }
 }
 
+void ps4_blink_stop(uint8_t dev_id) {
+    if (dev_id < BT_MAX_DEV) {
+        struct ps4_blink_ctx *ctx = &ps4_blink_ctxs[dev_id];
+        if (ctx->timer) {
+            esp_timer_stop(ctx->timer);
+            esp_timer_delete(ctx->timer);
+            ctx->timer = NULL;
+        }
+    }
+}
+
 static void ps4_start_player_blink(struct bt_dev *device) {
     uint8_t dev_id = device->ids.id;
     if (dev_id >= BT_MAX_DEV) {
@@ -223,9 +234,7 @@ static void ps4_start_player_blink(struct bt_dev *device) {
 
     struct ps4_blink_ctx *ctx = &ps4_blink_ctxs[dev_id];
     if (ctx->timer) {
-        esp_timer_stop(ctx->timer);
-        esp_timer_delete(ctx->timer);
-        ctx->timer = NULL;
+        return;
     }
 
     ctx->device = device;
@@ -334,6 +343,10 @@ void bt_hid_cmd_ps_set_conf(struct bt_dev *device, void *report) {
 
 void bt_hid_ps_init(struct bt_dev *device) {
 #ifndef CONFIG_BLUERETRO_TEST_FALLBACK_REPORT
+    if (atomic_test_bit(&device->flags, BT_DEV_HID_INIT_DONE) || device->timer_hdl != NULL) {
+        return;
+    }
+
     struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
     struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
 
