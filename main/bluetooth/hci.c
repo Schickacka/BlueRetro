@@ -1499,6 +1499,9 @@ void bt_hci_evt_hdlr(struct bt_hci_pkt *bt_hci_evt_pkt) {
             if (device) {
                 if (auth_complete->status) {
                     printf("# dev: %ld error: 0x%02X\n", device->ids.id, auth_complete->status);
+                    if (!atomic_test_bit(&device->flags, BT_DEV_PAGE)) {
+                        bt_hci_cmd_disconnect(&device->acl_handle, BT_HCI_ERR_AUTHENTICATION_FAIL);
+                    }
                 }
                 else {
                     printf("# dev: %ld Pairing done\n", device->ids.id);
@@ -1549,7 +1552,7 @@ void bt_hci_evt_hdlr(struct bt_hci_pkt *bt_hci_evt_pkt) {
                     }
                     if (!atomic_test_bit(&device->flags, BT_DEV_PAGE)) {
                         if (device->ids.type == BT_PS) {
-                            bt_host_q_wait_pkt(20);
+                            bt_host_q_wait_pkt(60);
                         }
                         bt_hci_cmd_auth_requested(&device->acl_handle);
                     }

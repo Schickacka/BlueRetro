@@ -13,6 +13,31 @@
 
 static void bt_hid_cmd_ps5_set_conf(struct bt_dev *device, void *report);
 
+static void bt_hid_cmd_ps4_clone_set_conf(struct bt_dev *device, struct bt_hidp_ps4_set_conf *report) {
+    struct bt_hidp_ps4_set_conf_usb clone_conf = {
+        .conf0 = 0xFF,
+        .conf1 = 0x04,
+        .tbd = 0x00,
+        .hf_motor_pwr = report->hf_motor_pwr,
+        .lf_motor_pwr = report->lf_motor_pwr,
+        .r = report->rgb[0],
+        .g = report->rgb[1],
+        .b = report->rgb[2],
+        .led_on_delay = report->led_on_delay,
+        .led_off_delay = report->led_off_delay,
+    };
+
+    /* Send Report 0x05 on interrupt channel */
+    memcpy((void *)bt_hci_pkt_tmp.hidp_data, &clone_conf, sizeof(clone_conf));
+    bt_hid_cmd(device->acl_handle, device->intr_chan.dcid, BT_HIDP_DATA_OUT, BT_HIDP_PS4_SET_CONF_USB, sizeof(clone_conf));
+
+    /* Also send on control channel if available */
+    if (device->ctrl_chan.dcid) {
+        memcpy((void *)bt_hci_pkt_tmp.hidp_data, &clone_conf, sizeof(clone_conf));
+        bt_hid_cmd(device->acl_handle, device->ctrl_chan.dcid, BT_HIDP_SET_OUT, BT_HIDP_PS4_SET_CONF_USB, sizeof(clone_conf));
+    }
+}
+
 static void bt_hid_cmd_ps4_set_conf(struct bt_dev *device, void *report) {
     struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_hci_pkt_tmp.hidp_data;
 
@@ -25,6 +50,11 @@ static void bt_hid_cmd_ps4_set_conf(struct bt_dev *device, void *report) {
         sizeof(bt_hci_pkt_tmp.hidp_hdr) + sizeof(*set_conf) - sizeof(set_conf->crc));
 
     bt_hid_cmd(device->acl_handle, device->intr_chan.dcid, BT_HIDP_DATA_OUT, BT_HIDP_PS4_SET_CONF, sizeof(*set_conf));
+
+    /* If this is a clone / third-party controller operating in HID status mode, also send Report 0x05 */
+    if (device->ids.report_type == BT_HIDP_HID_STATUS) {
+        bt_hid_cmd_ps4_clone_set_conf(device, (struct bt_hidp_ps4_set_conf *)report);
+    }
 }
 
 static void bt_hid_cmd_ps5_trigger_init(struct bt_dev *device) {
@@ -114,7 +144,7 @@ static void bt_hid_cmd_ps5_trigger_init(struct bt_dev *device) {
 static void bt_hid_ps5_init_callback(void *arg) {
     struct bt_dev *device = (struct bt_dev *)arg;
 
-    if (device->ids.report_type != BT_HIDP_PS4_STATUS) {
+    if (device->ids.subtype == BT_PS5_DS || device->ids.report_type == BT_HIDP_PS5_STATUS) {
         struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
         struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
 
@@ -134,7 +164,7 @@ static void bt_hid_ps5_init_callback(void *arg) {
             .conf1 = 0x04,
         };
         ps5_set_led.leds = hw_config.ps_ctrl_colors[device->ids.out_idx];
-        printf("# %s\n", __FUNCTION__);
+        printf("# %s: PS5 DualSense\n", __FUNCTION__);
 
         bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_clear_led);
         bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_set_led);
@@ -144,6 +174,13 @@ static void bt_hid_ps5_init_callback(void *arg) {
                 || config.out_cfg[device->ids.out_idx].acc_mode == ACC_BOTH) {
             bt_hid_cmd_ps5_trigger_init(device);
         }
+    }
+    else {
+        /* Clone or official DS4 */
+        struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
+        struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
+        printf("# %s: DS4 (report_type: 0x%02lX)\n", __FUNCTION__, device->ids.report_type);
+        bt_hid_cmd_ps4_set_conf(device, (void *)set_conf);
     }
 
     esp_timer_delete(device->timer_hdl);
@@ -227,6 +264,9 @@ void bt_hid_ps_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, ui
                     if (device->ids.report_type != BT_HIDP_HID_STATUS) {
                         bt_type_update(device->ids.id, BT_PS, BT_SUBTYPE_DEFAULT);
                         device->ids.report_type = BT_HIDP_HID_STATUS;
+                        struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
+                        struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
+                        bt_hid_cmd_ps4_clone_set_conf(device, set_conf);
                     }
                     bt_host_bridge(device, bt_hci_acl_pkt->hidp_hdr.protocol, bt_hci_acl_pkt->hidp_data, hidp_data_len);
                     break;

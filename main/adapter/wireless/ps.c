@@ -226,6 +226,9 @@ static void hid_to_generic(struct bt_data *bt_data, struct wireless_ctrl *ctrl_d
 static void ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_data) {
     struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
 
+    set_conf->conf0 = 0xc4;
+    set_conf->conf1 = 0x03;
+
     switch (fb_data->type) {
         case FB_TYPE_RUMBLE:
             if (fb_data->state) {

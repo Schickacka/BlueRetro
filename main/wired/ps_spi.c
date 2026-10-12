@@ -994,7 +994,7 @@ inner_break:
     }
 
     /* DTR */
-    ps_spi_port_cfg(0x3);
+    ps_spi_port_cfg(0x0);
 
     /* DSR */
     gpio_set_level_iram(P1_DSR_PIN, 1);

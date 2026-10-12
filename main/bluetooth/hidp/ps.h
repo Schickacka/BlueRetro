@@ -35,6 +35,20 @@ struct bt_hidp_ps4_set_conf {
     uint32_t crc;
 } __packed;
 
+#define BT_HIDP_PS4_SET_CONF_USB 0x05
+struct bt_hidp_ps4_set_conf_usb {
+    uint8_t conf0;
+    uint8_t conf1;
+    uint8_t tbd;
+    uint8_t hf_motor_pwr;
+    uint8_t lf_motor_pwr;
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t led_on_delay;
+    uint8_t led_off_delay;
+} __packed;
+
 #define BT_HIDP_PS5_SET_CONF 0x31
 struct bt_hidp_ps5_set_conf {
     uint8_t conf0;
