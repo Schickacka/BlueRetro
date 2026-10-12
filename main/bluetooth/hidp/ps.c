@@ -399,12 +399,12 @@ static void ps_conn_rumble_timer_cb(void *arg) {
             return;
         }
 
-        /* Start 0.5s pause */
+        /* Start 0.3s pause */
         ctx->phase = 1;
-        esp_timer_start_once(ctx->timer, 500000);
+        esp_timer_start_once(ctx->timer, 300000);
     }
     else {
-        /* 0.5s pause complete -> start next 1.0s rumble burst */
+        /* 0.3s pause complete -> start next 0.5s rumble burst */
         ctx->phase = 0;
         if (device->ids.subtype == BT_PS5_DS) {
             struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
@@ -419,7 +419,7 @@ static void ps_conn_rumble_timer_cb(void *arg) {
             bt_hid_cmd_ps4_set_conf(device, (void *)set_conf);
         }
 
-        esp_timer_start_once(ctx->timer, 1000000);
+        esp_timer_start_once(ctx->timer, 500000);
     }
 }
 
@@ -460,7 +460,7 @@ static void ps_start_player_rumble(struct bt_dev *device) {
     };
 
     if (esp_timer_create(&rumble_timer_args, &ctx->timer) == ESP_OK) {
-        esp_timer_start_once(ctx->timer, 1000000);
+        esp_timer_start_once(ctx->timer, 500000);
     }
 }
 
