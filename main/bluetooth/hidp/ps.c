@@ -170,12 +170,12 @@ static void ps4_blink_timer_cb(void *arg) {
 
     uint8_t blue_val;
     if (ctx->step < 25) {
-        /* Fade in: 0 -> 255 in 1.0s */
-        blue_val = (uint8_t)((ctx->step * 255) / 24);
+        /* Fade in: 0 -> 128 in 1.0s (50% brightness) */
+        blue_val = (uint8_t)((ctx->step * 128) / 24);
     }
     else {
-        /* Fade out: 255 -> 0 in 1.0s */
-        blue_val = (uint8_t)(((49 - ctx->step) * 255) / 24);
+        /* Fade out: 128 -> 0 in 1.0s (50% brightness) */
+        blue_val = (uint8_t)(((49 - ctx->step) * 128) / 24);
     }
 
     /* Update buffer directly so background tasks never send white/grey */
@@ -255,7 +255,7 @@ static void ps4_start_player_blink(struct bt_dev *device) {
     }
 
     ctx->device = device;
-    ctx->pending_led = 0x202020; /* Default: Digital mode Soft Grey / White */
+    ctx->pending_led = 0x101010; /* Default: Digital mode Soft Grey / White (50% brightness) */
     ctx->current_breath = 0;
     ctx->total_breaths = device->ids.out_idx + 1;
     ctx->step = 0;
@@ -301,7 +301,7 @@ static void bt_hid_ps5_init_callback(void *arg) {
         set_conf->valid_flag2 = 0x14; /* Enable lightbar + player indicator */
         set_conf->lightbar_setup = 0x02;
         set_conf->player_leds = ps5_player_led_mask[device->ids.out_idx & 0x3];
-        set_conf->leds = 0x202020; /* Boot: Soft Grey / White */
+        set_conf->leds = 0x101010; /* Boot: Soft Grey / White (50% brightness) */
 
         struct bt_hidp_ps5_set_conf ps5_clear_led = {
             .conf0 = 0x02,
@@ -313,7 +313,7 @@ static void bt_hid_ps5_init_callback(void *arg) {
             .valid_flag2 = 0x14,
             .lightbar_setup = 0x02,
             .player_leds = ps5_player_led_mask[device->ids.out_idx & 0x3],
-            .leds = 0x202020,
+            .leds = 0x101010,
         };
         printf("# %s: PS5 DualSense (Player %ld)\n", __FUNCTION__, device->ids.out_idx + 1);
 

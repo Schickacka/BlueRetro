@@ -248,17 +248,17 @@ static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
             return false;
         case FB_TYPE_STATUS_LED:
             if (ps4_is_breathing(bt_data->base.pids->id)) {
-                ps4_set_pending_led(bt_data->base.pids->id, fb_data->led ? 0x0000FF : 0x202020);
+                ps4_set_pending_led(bt_data->base.pids->id, fb_data->led ? 0x000080 : 0x101010);
                 return false;
             }
             else {
                 if (fb_data->led) {
-                    /* Analog Mode ON: Red LED (SCPH-1200 style) */
-                    set_conf->leds = 0x0000FF; /* RGB: R=255, G=0, B=0 */
+                    /* Analog Mode ON: Red LED (SCPH-1200 style) - 50% brightness */
+                    set_conf->leds = 0x000080; /* RGB: R=128, G=0, B=0 */
                 }
                 else {
-                    /* Digital Mode (Analog OFF): Soft Grey / White */
-                    set_conf->leds = 0x202020; /* RGB: R=32, G=32, B=32 */
+                    /* Digital Mode (Analog OFF): Soft Grey / White - 50% brightness */
+                    set_conf->leds = 0x101010; /* RGB: R=16, G=16, B=16 */
                 }
                 return true;
             }
@@ -295,12 +295,12 @@ static void ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
             break;
         case FB_TYPE_STATUS_LED:
             if (fb_data->led) {
-                /* Analog Mode ON: Red LED */
-                set_conf->leds = 0x0000FF;
+                /* Analog Mode ON: Red LED - 50% brightness */
+                set_conf->leds = 0x000080;
             }
             else {
-                /* Digital Mode: Soft Grey / White */
-                set_conf->leds = 0x202020;
+                /* Digital Mode: Soft Grey / White - 50% brightness */
+                set_conf->leds = 0x101010;
             }
             break;
     }
