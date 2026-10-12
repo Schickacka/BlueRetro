@@ -155,7 +155,7 @@ static void ps4_blink_timer_cb(void *arg) {
     struct ps4_blink_ctx *ctx = (struct ps4_blink_ctx *)arg;
     struct bt_dev *device = ctx->device;
 
-    if (!device || !atomic_test_bit(&device->flags, BT_DEV_CONNECTED)) {
+    if (!device || device->ids.type == BT_NONE || !atomic_test_bit(&device->flags, BT_DEV_HID_INIT_DONE)) {
         if (ctx->timer) {
             esp_timer_stop(ctx->timer);
             esp_timer_delete(ctx->timer);
@@ -226,6 +226,12 @@ static void ps4_start_player_blink(struct bt_dev *device) {
 static void bt_hid_ps5_init_callback(void *arg) {
     struct bt_dev *device = (struct bt_dev *)arg;
 
+    esp_timer_delete(device->timer_hdl);
+    device->timer_hdl = NULL;
+
+    atomic_set_bit(&device->flags, BT_DEV_HID_INIT_DONE);
+    printf("# PS init done\n");
+
     if (device->ids.subtype == BT_PS5_DS || device->ids.report_type == BT_HIDP_PS5_STATUS) {
         static const uint8_t ps5_player_led_mask[4] = {
             0x04, /* Player 1: . . * . . */
@@ -275,12 +281,6 @@ static void bt_hid_ps5_init_callback(void *arg) {
         printf("# %s: DS4 (report_type: 0x%02lX, Player %ld)\n", __FUNCTION__, device->ids.report_type, device->ids.out_idx + 1);
         ps4_start_player_blink(device);
     }
-
-    esp_timer_delete(device->timer_hdl);
-    device->timer_hdl = NULL;
-
-    atomic_set_bit(&device->flags, BT_DEV_HID_INIT_DONE);
-    printf("# PS init done\n");
 }
 
 static void bt_hid_cmd_ps5_set_conf(struct bt_dev *device, void *report) {
