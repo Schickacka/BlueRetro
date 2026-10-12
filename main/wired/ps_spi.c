@@ -1043,31 +1043,44 @@ inner_break:
 }
 
 void ps_spi_port_cfg(uint16_t mask) {
+    static uint16_t cur_mask = 0xFFFF;
     uint32_t signals[PS_PORT_MAX] = {HSPICS0_IN_IDX, VSPICS0_IN_IDX};
     uint32_t gpio_pin[PS_PORT_MAX] = {P1_DTR_PIN, P2_DTR_PIN};
     uint32_t rxd_pin[PS_PORT_MAX] = {P1_RXD_PIN, P2_RXD_PIN};
     uint32_t dsr_pin[PS_PORT_MAX] = {P1_DSR_PIN, P2_DSR_PIN};
 
     for (uint32_t i = 0; i < PS_PORT_MAX; i++) {
+        uint8_t new_state = (mask >> i) & 0x1;
+        uint8_t old_state = (cur_mask >> i) & 0x1;
 
-        if (mask & 0x1) {
-            gpio_config_t io_conf = {
-                .mode = GPIO_MODE_INPUT,
-                .intr_type = GPIO_PIN_INTR_POSEDGE,
-                .pull_down_en = GPIO_PULLDOWN_DISABLE,
-                .pull_up_en = GPIO_PULLUP_DISABLE,
-            };
+        if (new_state != old_state) {
+            if (new_state) {
+                gpio_config_t io_conf = {
+                    .mode = GPIO_MODE_INPUT,
+                    .intr_type = GPIO_PIN_INTR_POSEDGE,
+                    .pull_down_en = GPIO_PULLDOWN_DISABLE,
+                    .pull_up_en = GPIO_PULLUP_ENABLE,
+                };
 
-            io_conf.pin_bit_mask = 1ULL << gpio_pin[i];
-            gpio_config_iram(&io_conf);
-            gpio_matrix_in(gpio_pin[i], signals[i], 0);
+                io_conf.pin_bit_mask = 1ULL << gpio_pin[i];
+                gpio_config_iram(&io_conf);
+                gpio_matrix_in(gpio_pin[i], signals[i], 0);
+
+                ps_ctrl_ports[i].idx = 0;
+                ps_ctrl_ports[i].valid = 0;
+                set_output_state(i, 0);
+            }
+            else {
+                gpio_reset_iram(gpio_pin[i]);
+                gpio_matrix_in(GPIO_MATRIX_CONST_ONE_INPUT, signals[i], 0);
+                gpio_set_direction_iram(rxd_pin[i], GPIO_MODE_INPUT);
+                gpio_set_direction_iram(dsr_pin[i], GPIO_MODE_INPUT);
+
+                ps_ctrl_ports[i].idx = 0;
+                ps_ctrl_ports[i].valid = 0;
+                set_output_state(i, 0);
+            }
         }
-        else {
-            gpio_reset_iram(gpio_pin[i]);
-            gpio_matrix_in(GPIO_MATRIX_CONST_ONE_INPUT, signals[i], 0);
-            gpio_set_direction_iram(rxd_pin[i], GPIO_MODE_INPUT);
-            gpio_set_direction_iram(dsr_pin[i], GPIO_MODE_INPUT);
-        }
-        mask >>= 1;
     }
+    cur_mask = mask;
 }

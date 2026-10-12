@@ -144,9 +144,9 @@ static void bt_hid_cmd_ps5_trigger_init(struct bt_dev *device) {
 struct ps4_blink_ctx {
     esp_timer_handle_t timer;
     struct bt_dev *device;
-    uint8_t current_blink;
-    uint8_t total_blinks;
-    uint8_t phase; /* 0 = off, 1 = blue on */
+    uint8_t current_breath;
+    uint8_t total_breaths;
+    uint8_t step; /* 0 to 49 (50 steps * 40ms = 2000ms per breath) */
 };
 
 static struct ps4_blink_ctx ps4_blink_ctxs[BT_MAX_DEV] = {0};
@@ -167,23 +167,29 @@ static void ps4_blink_timer_cb(void *arg) {
     struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
     struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
 
-    if (ctx->phase == 1) {
-        /* Phase 1: Blue ON */
-        struct bt_hidp_ps4_set_conf blink_conf = *set_conf;
-        blink_conf.leds = 0xFF0000; /* Blue (RGB: 0, 0, 255) */
-        bt_hid_cmd_ps4_set_conf(device, (void *)&blink_conf);
-        ctx->phase = 0;
+    uint8_t blue_val;
+    if (ctx->step < 25) {
+        /* Fade in: 0 -> 255 in 1.0s */
+        blue_val = (uint8_t)((ctx->step * 255) / 24);
     }
     else {
-        /* Phase 0: Dark / OFF */
-        struct bt_hidp_ps4_set_conf blink_conf = *set_conf;
-        blink_conf.leds = 0x000000;
-        bt_hid_cmd_ps4_set_conf(device, (void *)&blink_conf);
-        ctx->current_blink++;
-        ctx->phase = 1;
+        /* Fade out: 255 -> 0 in 1.0s */
+        blue_val = (uint8_t)(((49 - ctx->step) * 255) / 24);
+    }
 
-        if (ctx->current_blink >= ctx->total_blinks) {
-            /* Blink sequence complete! Restore normal SCPH-1200 mode LED */
+    struct bt_hidp_ps4_set_conf breath_conf = *set_conf;
+    breath_conf.rgb[0] = 0;
+    breath_conf.rgb[1] = 0;
+    breath_conf.rgb[2] = blue_val; /* Smooth Blue Breath */
+    bt_hid_cmd_ps4_set_conf(device, (void *)&breath_conf);
+
+    ctx->step++;
+    if (ctx->step >= 50) {
+        ctx->step = 0;
+        ctx->current_breath++;
+
+        if (ctx->current_breath >= ctx->total_breaths) {
+            /* Breathing complete! Stop timer and restore normal SCPH-1200 mode LED */
             esp_timer_stop(ctx->timer);
             esp_timer_delete(ctx->timer);
             ctx->timer = NULL;
@@ -206,19 +212,19 @@ static void ps4_start_player_blink(struct bt_dev *device) {
     }
 
     ctx->device = device;
-    ctx->current_blink = 0;
-    ctx->total_blinks = device->ids.out_idx + 1;
-    ctx->phase = 1;
+    ctx->current_breath = 0;
+    ctx->total_breaths = device->ids.out_idx + 1;
+    ctx->step = 0;
 
     const esp_timer_create_args_t blink_timer_args = {
         .callback = &ps4_blink_timer_cb,
         .arg = (void *)ctx,
-        .name = "ps4_blink_tmr"
+        .name = "ps4_breath_tmr"
     };
 
     if (esp_timer_create(&blink_timer_args, &ctx->timer) == ESP_OK) {
-        /* 250ms per half-period (250ms on, 250ms off) */
-        esp_timer_start_periodic(ctx->timer, 250000);
+        /* 40ms interval * 50 steps = 2000ms (2.0s) per full breath */
+        esp_timer_start_periodic(ctx->timer, 40000);
         ps4_blink_timer_cb((void *)ctx);
     }
 }
