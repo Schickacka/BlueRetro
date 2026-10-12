@@ -183,10 +183,10 @@ void bt_hid_ps_init(struct bt_dev *device) {
     struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
     struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
 
-    /* Init output data for Rumble/LED feedback */
+    /* Init output data for Rumble/LED feedback (Boot in SCPH-1200 Digital: Grey/White) */
     set_conf->conf0 = 0xc4;
     set_conf->conf1 = 0x03;
-    set_conf->leds = hw_config.ps_ctrl_colors[bt_data->base.pids->out_idx];
+    set_conf->leds = 0x202020;
 
     switch (device->ids.subtype) {
         case BT_PS5_DS:
@@ -203,7 +203,7 @@ void bt_hid_ps_init(struct bt_dev *device) {
                 .conf0 = 0xc0,
                 .conf1 = 0x07,
             };
-            ps4_set_conf.leds = hw_config.ps_ctrl_colors[device->ids.out_idx];
+            ps4_set_conf.leds = 0x202020;
 
             printf("# %s\n", __FUNCTION__);
 

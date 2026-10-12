@@ -313,8 +313,7 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
         case 0x42:
         {
             req++;
-            if (port->dev_id[id] != 0x41
-                    && (req[port->rumble_r_idx[id]] != port->rumble_r_val[id]
+            if ((req[port->rumble_r_idx[id]] != port->rumble_r_val[id]
                         || req[port->rumble_l_idx[id]] != port->rumble_l_val[id])
                     && (config.out_cfg[id + port->mt_first_port].acc_mode & ACC_RUMBLE)) {
                 struct raw_fb fb_data = {0};
@@ -1046,6 +1045,8 @@ inner_break:
 void ps_spi_port_cfg(uint16_t mask) {
     uint32_t signals[PS_PORT_MAX] = {HSPICS0_IN_IDX, VSPICS0_IN_IDX};
     uint32_t gpio_pin[PS_PORT_MAX] = {P1_DTR_PIN, P2_DTR_PIN};
+    uint32_t rxd_pin[PS_PORT_MAX] = {P1_RXD_PIN, P2_RXD_PIN};
+    uint32_t dsr_pin[PS_PORT_MAX] = {P1_DSR_PIN, P2_DSR_PIN};
 
     for (uint32_t i = 0; i < PS_PORT_MAX; i++) {
 
@@ -1064,6 +1065,8 @@ void ps_spi_port_cfg(uint16_t mask) {
         else {
             gpio_reset_iram(gpio_pin[i]);
             gpio_matrix_in(GPIO_MATRIX_CONST_ONE_INPUT, signals[i], 0);
+            gpio_set_direction_iram(rxd_pin[i], GPIO_MODE_INPUT);
+            gpio_set_direction_iram(dsr_pin[i], GPIO_MODE_INPUT);
         }
         mask >>= 1;
     }

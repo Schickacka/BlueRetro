@@ -20,7 +20,7 @@
 struct config config;
 struct hw_config hw_config = {
     .external_adapter = 0,
-    .hotplug = 0,
+    .hotplug = 1,
     .hw1_ports_led_pins = {2, 4, 12, 15},
     .led_flash_duty_cycle = 0x80000,
     .led_flash_hz = {2, 4, 8},

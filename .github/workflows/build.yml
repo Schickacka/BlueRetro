@@ -8,23 +8,10 @@ on:
 
 jobs:
   build:
-    if: ${{ (github.repository == 'darthcloud/BlueRetro') || (github.event_name == 'workflow_dispatch') }}
     strategy:
       matrix:
-        hw_version: [hw1, hw2]
-        br_config:
-          [3do, cdi, dreamcast, gamecube, gbahd, genesis, jaguar, jvs_arcade, n64, nes,
-          parallel_1p, parallel_1p_3v3, parallel_2p, parallel_2p_3v3, pc_engine, pcfx,
-          playstation, saturn, snes, universal, virtualboy, wii_extension]
-        include:
-          - hw_version: dbg
-            br_config: pad_test
-          - hw_version: dbg
-            br_config: qemu
-          - hw_version: dbg
-            br_config: qemu_bt_trace_replay
-          - hw_version: dbg
-            br_config: qemu_bt_trace_replay_test
+        hw_version: [hw1]
+        br_config: [playstation]
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/darthcloud/idf-blueretro:v5.5.0_2024-12-02
