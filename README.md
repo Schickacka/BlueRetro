@@ -1,62 +1,129 @@
-**This repository has been archived and is no longer under active development or maintenance.**
+# 🎮 BlueRetro — PlayStation 1 Custom Edition (v0.1)
 
+<p align="center">
+  <img src="static/PNGs/BRE_Logo_Color_Outline.png" width="450"/>
+</p>
+
+<p align="center">
+  <b>Firmware customizado de alta performance para receptor interno/externo BlueRetro no PlayStation 1 (ESP32 DevKit).</b><br>
+  <i>Desenvolvido por <b>Schickacka</b> com base no projeto pioneiro de Jacques Gagnon (<a href="https://github.com/darthcloud/BlueRetro">BlueRetro</a>).</i>
+</p>
+
+---
+
+## 🚀 O que esta versão traz de novo (Changelog v0.1)
+
+Esta edição foi desenvolvida sob medida para resolver limitações do BlueRetro clássico em instalações no PlayStation 1 (especialmente consoles PU-8, SCPH-3500 e posteriores), aprimorando a experiência com **DualShock 4** e **DualSense (PS5)**:
+
+### 1. 💡 LED Onboard Inteligente (GPIO 2 no ESP32)
+* **0 Controles conectados:**
+  * Modo busca / pareamento (`inquiry` ativo): **Pulsando / Respirando suavemente**.
+  * Sem busca: **Totalmente apagado**.
+* **Apenas Controle 1 conectado:**
+  * **Aceso contínuo** (100% aceso).
+* **Controle 1 + outros controles (P1 + P2, etc.):**
+  * Permanece aceso contínuo, emitindo piscadinhas rápidas **apagadas** (*winks* de 100ms) a cada 3 segundos indicando a quantidade de controles conectados.
+* **Controle 1 desconectado, mas outro controle conectado (ex: apenas o P2):**
+  * Permanece apagado e pisca **aceso** a cada 3 segundos o número de vezes correspondente ao maior controle conectado (ex: 2 piscadas para o P2).
+
+### 2. 📳 Feedback Háptico na Conexão (Estilo 8BitDo)
+* Assim que o controle Bluetooth conecta, ele vibra os motores em pulsos rápidos de **0,5 segundo** (500ms) com pausas de **0,3 segundo** indicando o número do jogador:
+  * **Controle 1:** 1 toque ágil de 0.5s.
+  * **Controle 2:** 2 toques ágeis de 0.5s (0.5s vibra ➔ 0.3s pausa ➔ 0.5s vibra).
+  * **Controle 3 / 4:** 3 e 4 toques respectivamente.
+
+### 3. 🌙 Modo Noturno com Brilho a 50% (Eye-Friendly)
+* A barra de luz do DualShock 4 e DualSense foi recalibrada para 50% de intensidade, perfeita para jogar no escuro sem ofuscar a visão:
+  * **Modo Analógico (SCPH-1200):** Vermelho suave (`R=128`).
+  * **Modo Digital:** Branco/Cinza ambiente discreto (`RGB=16, 16, 16`).
+  * **Respiração de Conexão:** Onda azul suave até 50% (`B=128`).
+
+### 4. 🔄 Correção de Travamento de Analógico no RESET (Caso *Resident Evil 3*)
+* Jogos como *Resident Evil 3* ativam o modo Analógico via software (`0x73`). Ao pressionar o botão físico **RESET** do PS1, o console reinicia a BIOS enquanto o barramento SPI silencia temporariamente.
+* Nesta versão, implementamos um **timeout de inatividade de 1.5s**: se o console for resetado e o barramento SPI parar de se comunicar, o receptor reverte automaticamente para **Digital (`0x41`)**, apaga o LED analógico e volta o controle para o tom neutro.
+* O botão **PS** agora é verificado continuamente via polling em segundo plano (<0,1 µs de CPU), permitindo alternar Digital/Analógico a qualquer momento sem travar.
+
+### 5. 👥 Isolamento Total de Hotplug Multiplayer & Vibração no P2
+* Corrigido o bug onde desconectar o Controle 2 deixava o Controle 1 inoperante na tela da BIOS.
+* O Controle 2 agora possui suporte completo a vibração em jogos (*Tony Hawk's Pro Skater 2*, etc.) e suporte a controles paralelos/clones de PS4.
+
+### 6. ⚡ Zero Input Lag
+* O barramento SPI com o PlayStation roda em código *bare-metal* dedicado no **Core 1** do ESP32 com resposta em microssegundos (idêntico a um controle físico original). Todas as nossas rotinas adicionais rodam no Core 0 sem adicionar sequer 1 microssegundo de atraso.
+
+---
+
+## 🛠️ Esquema de Ligação (Pinout de Hardware)
+
+### Conexão do ESP32 DevKit à Porta de Controles do PS1
+
+```text
+               [ 9   7   6 ]   [ 5   4   3 ]   [ 2   1 ]  (Porta do Console PS1)
+               -----------------------------------------
 ```
-After 6 years working on BlueRetro, the time has come for me to move on
-and focus on my family and my real job.
 
-The code remains available as-is for reference, learning, and community use,
-but no new features, bug fixes, or pull requests will be accepted.
+| Pino PS1 | Sinal PS1 | Conexão ESP32 (Porta 1) | Conexão ESP32 (Porta 2) | Observações |
+| :---: | :---: | :---: | :---: | :--- |
+| **1** | **DATA** | **GPIO 19** | **GPIO 22** | Linha de dados para o PS1 (Requer pull-up de 1kΩ–10kΩ para 3.3V se externo) |
+| **2** | **CMND** | **GPIO 23** | **GPIO 23** | Linha de comando compartilhada |
+| **3** | **7.6V** | *Não conectar ao ESP32* | *Não conectar* | Tensão do motor de vibração original do console |
+| **4** | **GND** | **GND** | **GND** | Terra comum |
+| **5** | **3.5V** | **3.3V** *(ou VIN)* | **3.3V** *(ou VIN)* | Linha de alimentação lógica |
+| **6** | **ATT (SEL)** | **GPIO 5** | **GPIO 26** | Seleção individual de porta |
+| **7** | **CLK** | **GPIO 18** | **GPIO 18** | Clock SPI compartilhado |
+| **9** | **ACK** | **GPIO 21** | **GPIO 27** | Confirmação de recebimento |
 
-Thank you to everyone who contributed, tested, reported issues,
-or supported the project over the years.
-Your involvement made BlueRetro what it is today.
+> 💡 **Dica de Instalação Interna:** Se estiver instalando internamente na placa-mãe (ex: PU-8), solde os fios diretamente nos pontos de teste (test points) ou no verso da placa do conector de controles.
 
-If you are looking to build upon this work, please feel free to
-fork the repository in accordance with the license.
+---
 
-Thank you,
-Jacques Gagnon
+## 📦 Como Instalar / Gravar o Firmware no ESP32
+
+### Método 1: Pacote Rápido para Windows (Recomendado)
+
+1. Baixe o arquivo **[`BlueRetro_PS1_Custom_v0.1_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba **Releases**.
+2. Extraia o arquivo zip em qualquer pasta do computador.
+3. Conecte o ESP32 na porta USB do PC.
+4. Dê dois cliques em **`flash_windows.bat`**.
+5. Digite a sua porta COM (exemplo: `COM6`) e pressione Enter.
+6. Pronto! O script gravará as partições e o firmware automaticamente com verificação.
+
+---
+
+### Método 2: Instalação Manual via Terminal (Qualquer SO)
+
+Certifique-se de ter o Python e o `esptool` instalados:
+```bash
+pip install esptool
 ```
 
-# BlueRetro
+Execute o comando de gravação diretamente:
+```bash
+python -m esptool --chip esp32 --port COM6 -b 921600 --before default-reset --after hard-reset write-flash --flash-mode dio --flash-size 4MB --flash-freq 40m 0x1000 bootloader.bin 0x8000 partition-table.bin 0xd000 ota_data_initial.bin 0x10000 BlueRetro_hw1_playstation.bin
+```
+*(Substitua `COM6` pela porta serial do seu ESP32 no Windows, ou `/dev/ttyUSB0` no Linux/macOS).*
 
-<p align="center"><img src="/static/PNGs/BRE_Logo_Color_Outline.png" width="600"/></p>
-<br>
-<p align="justify">BlueRetro is a multiplayer Bluetooth controllers adapter for various retro game consoles & computers. Lost or broken controllers? Reproduction too expensive? Need those rare and obscure accessories? Just use the Bluetooth devices you already got! The project is open source hardware & software under the CERN-OHL-P-2.0 & Apache-2.0 licenses respectively. It's built for the popular ESP32 chip. Wii, Switch, PS3, PS4, PS5, Xbox One, Xbox Series X|S & generic HID Bluetooth (BR/EDR & LE) devices are supported. Parallel 1P (Computers, NeoGeo, Supergun, JAMMA, Handheld, etc), Parallel 2P (Atari 2600/7800, Master System, Computers, etc), NES, PCE / TG16, Mega Drive / Genesis, SNES, CD-i, 3DO, Jaguar, Saturn, PSX, PC-FX, JVS (Arcade), Virtual Boy, N64, Dreamcast, PS2, GameCube & Wii extension are supported with simultaneous 4+ players using a single adapter.</p>
+---
 
-## READ THIS FIRST
-* [Project documentation](https://github.com/darthcloud/BlueRetro/wiki)
+## 🎮 Como Parear e Usar os Controles
 
-## Need help?
-* [Open a GitHub discussion](https://github.com/darthcloud/BlueRetro/discussions)
+### Pareando o Controle:
+1. Ligue o PlayStation 1 com o receptor BlueRetro conectado.
+2. O LED azul onboard do ESP32 começará a **respirar suavemente**, indicando que está aguardando conexão.
+3. No seu controle:
+   * **DualShock 4:** Segure os botões **PS + SHARE** juntos até a barra de luz piscar em rajadas duplas.
+   * **DualSense (PS5):** Segure os botões **PS + CREATE** juntos até os LEDs piscarem rápido.
+4. O controle conectará em poucos segundos:
+   * Dará uma vibração tátil de **0,5 segundo**.
+   * A barra de luz respirará em tom azul indicando o número do jogador e depois assumirá o modo de jogo.
 
-## Makers sponsoring BlueRetro
-Buying BlueRetro adapters from these makers helps support the continued development of the BlueRetro firmware!\
-Thanks to all sponsors!
+### Alternando entre Modo Digital e Modo Analógico:
+* Basta apertar o botão **PS** no controle a qualquer momento:
+  * **Modo Analógico ATIVO:** A barra de luz acende em **Vermelho** (reproduzindo o LED físico do SCPH-1200) e os dois analógicos são ativados.
+  * **Modo Digital (Analógico DESLIGADO):** A barra de luz acende em **Branco/Cinza suave** e os analógicos são desligados (ideal para jogos 2D clássicos como *Crash Bandicoot 1*, *Ridge Racer*, etc.).
 
-* [Laser Bear Industries](https://www.laserbear.net)
-* [Humble Bazooka](https://www.humblebazooka.com)
-* [RetroOnyx](https://www.retroonyx.com/)
-* [RetroTime](https://8bitmods.com/retrotime)
+---
 
-## Community Contribution
-* BlueRetro PS1/2 Receiver by [mi213](https://twitter.com/mi213ger): 3D printed case & PCB for building DIY PS1/2 dongle.\
-  https://github.com/Micha213/BlueRetro-PS1-2-Receiver
-* N64 BlueRetro Mount by [reventlow64](https://twitter.com/reventlow): 3d printed mount for ESP32-DevkitC for N64.\
-  https://www.prusaprinters.org/prints/90275-nintendo-64-blueretro-bluetooth-receiver-mount
-* BlueRetro Adapter Case by [Sigismond0](https://twitter.com/Sigismond0): 3d printed case for ESP32-DevkitC.\
-  https://www.prusaprinters.org/prints/116729-blueretro-bluetooth-controller-adapter-case
-* BlueRetro AIO by [pmgducati](https://github.com/pmgducati): BlueRetro Through-hole base and cable PCBs.\
-  https://github.com/pmgducati/Blue-Retro-AIO-Units
-* BlueRetro HW2 internal guides by [Nostalgic Indulgences](https://twitter.com/nosIndulgences): Internal install guides\
-  https://github.com/nostalgic-indulgences/BlueRetro_Internal_Installation
-* BlueRetro latency test by [GamingNJncos](https://twitter.com/GamingNJncos): Documentation on how to run BlueRetro latency test\
-  https://github.com/GamingNJncos/BLE-3D-Saturn-Public/tree/main/BlueRetro_Latency_Testing
-* BR4N64 by [TharathielCB](https://github.com/TharathielCB): Internal BlueRetro Flex-PCB for Nintendo 64\
-  https://github.com/TharathielCB/BR4N64
-* BlueMemCard by [ChrispyNugget](https://github.com/ChrispyNugget): Replacement PCB for PSX memory card that incorporates PicoMemcard and BlueRetro support\
-  https://github.com/ChrispyNugget/BlueMemCard
-* BlueRetro HW2 QSB for GameCube by [Arthrimus](https://github.com/Arthrimus): Internal Blueretro PCB with CurrentTrigger for GameCube\
-  https://github.com/Arthrimus/BlueRetro-HW2-GameCube
+## 📜 Licença e Agradecimentos
 
-<br><p align="center"><img src="https://cdn.hackaday.io/images/4560691598833898038.png" height="200"/></p>
+* **BlueRetro:** Copyright (c) 2019-2025 Jacques Gagnon (Licença Apache-2.0 / CERN-OHL-P-2.0).
+* **Modificações & Customizações para PS1:** Desenvolvido e testado por **Schickacka**.
