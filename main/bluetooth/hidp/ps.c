@@ -144,6 +144,7 @@ static void bt_hid_cmd_ps5_trigger_init(struct bt_dev *device) {
 struct ps4_blink_ctx {
     esp_timer_handle_t timer;
     struct bt_dev *device;
+    uint32_t pending_led;
     uint8_t current_breath;
     uint8_t total_breaths;
     uint8_t step; /* 0 to 49 (50 steps * 40ms = 2000ms per breath) */
@@ -177,11 +178,11 @@ static void ps4_blink_timer_cb(void *arg) {
         blue_val = (uint8_t)(((49 - ctx->step) * 255) / 24);
     }
 
-    struct bt_hidp_ps4_set_conf breath_conf = *set_conf;
-    breath_conf.rgb[0] = 0;
-    breath_conf.rgb[1] = 0;
-    breath_conf.rgb[2] = blue_val; /* Smooth Blue Breath */
-    bt_hid_cmd_ps4_set_conf(device, (void *)&breath_conf);
+    /* Update buffer directly so background tasks never send white/grey */
+    set_conf->rgb[0] = 0;
+    set_conf->rgb[1] = 0;
+    set_conf->rgb[2] = blue_val;
+    bt_hid_cmd_ps4_set_conf(device, (void *)set_conf);
 
     ctx->step++;
     if (ctx->step >= 50) {
@@ -189,12 +190,28 @@ static void ps4_blink_timer_cb(void *arg) {
         ctx->current_breath++;
 
         if (ctx->current_breath >= ctx->total_breaths) {
-            /* Breathing complete! Stop timer and restore normal SCPH-1200 mode LED */
+            /* Breathing complete! Stop timer */
             esp_timer_stop(ctx->timer);
             esp_timer_delete(ctx->timer);
             ctx->timer = NULL;
+
+            /* Restore pending SCPH-1200 mode LED (Grey for Digital, Red for Analog) */
+            set_conf->leds = ctx->pending_led;
             bt_hid_cmd_ps4_set_conf(device, (void *)set_conf);
         }
+    }
+}
+
+uint8_t ps4_is_breathing(uint8_t dev_id) {
+    if (dev_id < BT_MAX_DEV) {
+        return (ps4_blink_ctxs[dev_id].timer != NULL);
+    }
+    return 0;
+}
+
+void ps4_set_pending_led(uint8_t dev_id, uint32_t color) {
+    if (dev_id < BT_MAX_DEV) {
+        ps4_blink_ctxs[dev_id].pending_led = color;
     }
 }
 
@@ -212,6 +229,7 @@ static void ps4_start_player_blink(struct bt_dev *device) {
     }
 
     ctx->device = device;
+    ctx->pending_led = 0x202020; /* Default: Digital mode Soft Grey / White */
     ctx->current_breath = 0;
     ctx->total_breaths = device->ids.out_idx + 1;
     ctx->step = 0;
@@ -319,10 +337,10 @@ void bt_hid_ps_init(struct bt_dev *device) {
     struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
     struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
 
-    /* Init output data for Rumble/LED feedback (Boot in SCPH-1200 Digital: Grey/White) */
+    /* Init output data for Rumble/LED feedback */
     set_conf->conf0 = 0xc4;
     set_conf->conf1 = 0x03;
-    set_conf->leds = 0x202020;
+    set_conf->leds = 0x000000;
 
     switch (device->ids.subtype) {
         case BT_PS5_DS:
@@ -339,7 +357,7 @@ void bt_hid_ps_init(struct bt_dev *device) {
                 .conf0 = 0xc0,
                 .conf1 = 0x07,
             };
-            ps4_set_conf.leds = 0x202020;
+            ps4_set_conf.leds = 0x000000;
 
             printf("# %s\n", __FUNCTION__);
 

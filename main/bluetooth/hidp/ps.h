@@ -100,5 +100,7 @@ struct bt_hidp_ps5_set_conf {
 void bt_hid_cmd_ps_set_conf(struct bt_dev *device, void *report);
 void bt_hid_ps_init(struct bt_dev *device);
 void bt_hid_ps_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, uint32_t len);
+uint8_t ps4_is_breathing(uint8_t dev_id);
+void ps4_set_pending_led(uint8_t dev_id, uint32_t color);
 
 #endif /* _BT_HIDP_PS_H_ */

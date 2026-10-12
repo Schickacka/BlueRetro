@@ -223,7 +223,7 @@ static void hid_to_generic(struct bt_data *bt_data, struct wireless_ctrl *ctrl_d
     }
 }
 
-static void ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_data) {
+static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_data) {
     struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
 
     set_conf->conf0 = 0xc4;
@@ -239,21 +239,31 @@ static void ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
                 set_conf->hf_motor_pwr = 0x00;
                 set_conf->lf_motor_pwr = 0x00;
             }
-            break;
+            return true;
         case FB_TYPE_PLAYER_LED:
-            set_conf->leds = hw_config.ps_ctrl_colors[bt_data->base.pids->out_idx];
-            break;
+            if (!ps4_is_breathing(bt_data->base.pids->id)) {
+                set_conf->leds = hw_config.ps_ctrl_colors[bt_data->base.pids->out_idx];
+                return true;
+            }
+            return false;
         case FB_TYPE_STATUS_LED:
-            if (fb_data->led) {
-                /* Analog Mode ON: Red LED (SCPH-1200 style) */
-                set_conf->leds = 0x0000FF; /* RGB: R=255, G=0, B=0 */
+            if (ps4_is_breathing(bt_data->base.pids->id)) {
+                ps4_set_pending_led(bt_data->base.pids->id, fb_data->led ? 0x0000FF : 0x202020);
+                return false;
             }
             else {
-                /* Digital Mode (Analog OFF): Soft Grey / White */
-                set_conf->leds = 0x202020; /* RGB: R=32, G=32, B=32 */
+                if (fb_data->led) {
+                    /* Analog Mode ON: Red LED (SCPH-1200 style) */
+                    set_conf->leds = 0x0000FF; /* RGB: R=255, G=0, B=0 */
+                }
+                else {
+                    /* Digital Mode (Analog OFF): Soft Grey / White */
+                    set_conf->leds = 0x202020; /* RGB: R=32, G=32, B=32 */
+                }
+                return true;
             }
-            break;
     }
+    return false;
 }
 
 static void ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_data) {
@@ -322,7 +332,7 @@ bool ps_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_data) {
             ps5_fb_from_generic(fb_data, bt_data);
             break;
         default:
-            ps4_fb_from_generic(fb_data, bt_data);
+            ret = ps4_fb_from_generic(fb_data, bt_data);
             break;
     }
     return ret;

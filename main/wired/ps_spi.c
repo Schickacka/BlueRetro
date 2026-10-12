@@ -281,11 +281,13 @@ static void ps_analog_btn_hdlr(struct ps_ctrl_port *port, uint8_t id) {
             if (port->analog_btn[id]) {
                 struct raw_fb fb_data = {0};
                 port->analog_btn[id] = 0;
-                port->rumble_r_state[id] = 0;
-                port->rumble_l_state[id] = 0;
                 if (port->dev_id[id] == 0x41) {
                     port->dev_id[id] = 0x73;
                     port->dev_desc[id] = 0x3FFFF;
+                    port->rumble_r_state[id] = 1;
+                    port->rumble_l_state[id] = 1;
+                    port->rumble_r_idx[id] = 0;
+                    port->rumble_l_idx[id] = 1;
                     if (id == 0) {
                         gpio_set_level_iram(ps_ctrl_ports[port->mt_first_port ? 1 : 0].led_pin, 1);
                     }
@@ -294,6 +296,8 @@ static void ps_analog_btn_hdlr(struct ps_ctrl_port *port, uint8_t id) {
                 else {
                     port->dev_id[id] = 0x41;
                     port->dev_desc[id] = 0;
+                    port->rumble_r_state[id] = 0;
+                    port->rumble_l_state[id] = 0;
                     if (id == 0) {
                         gpio_set_level_iram(ps_ctrl_ports[port->mt_first_port ? 1 : 0].led_pin, 0);
                     }
@@ -313,9 +317,8 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
         case 0x42:
         {
             req++;
-            if ((req[port->rumble_r_idx[id]] != port->rumble_r_val[id]
-                        || req[port->rumble_l_idx[id]] != port->rumble_l_val[id])
-                    && (config.out_cfg[id + port->mt_first_port].acc_mode & ACC_RUMBLE)) {
+            if (req[port->rumble_r_idx[id]] != port->rumble_r_val[id]
+                        || req[port->rumble_l_idx[id]] != port->rumble_l_val[id]) {
                 struct raw_fb fb_data = {0};
                 if (port->rumble_r_state[id]) {
                     fb_data.data[0] = req[port->rumble_r_idx[id]];
@@ -991,6 +994,18 @@ void ps_spi_init(uint32_t package) {
         }
 inner_break:
         ;
+    }
+
+    for (uint32_t i = 0; i < PS_PORT_MAX; i++) {
+        for (uint32_t j = 0; j < MT_PORT_MAX; j++) {
+            ps_ctrl_ports[i].rumble_r_state[j] = 1;
+            ps_ctrl_ports[i].rumble_l_state[j] = 1;
+            ps_ctrl_ports[i].rumble_r_idx[j] = 0;
+            ps_ctrl_ports[i].rumble_l_idx[j] = 1;
+        }
+    }
+    for (uint32_t i = 0; i < WIRED_MAX_DEV; i++) {
+        config.out_cfg[i].acc_mode = ACC_RUMBLE;
     }
 
     /* DTR */
