@@ -27,6 +27,8 @@
 #include "system/fs.h"
 #include "system/led.h"
 #include "bare_metal_app_cpu.h"
+#include "adapter/wired/wired.h"
+#include "wired/ps_spi.h"
 #include "manager.h"
 
 #define BOOT_BTN_PIN 0
@@ -267,6 +269,70 @@ static void power_on_hdl(void) {
 #endif /* CONFIG_BLUERETRO_HW2 */
 }
 
+static void update_onboard_led(uint32_t tick) {
+    uint8_t p1_connected = 0;
+    uint8_t total_connected = 0;
+    uint8_t highest_player = 0;
+
+    for (int32_t i = 0; i < BT_MAX_DEV; i++) {
+        struct bt_dev *device = NULL;
+        bt_host_get_dev_from_id(i, &device);
+        if (device && atomic_test_bit(&device->flags, BT_DEV_HID_INIT_DONE)) {
+            total_connected++;
+            uint8_t player_num = device->ids.out_idx + 1;
+            if (player_num > highest_player) {
+                highest_player = player_num;
+            }
+            if (device->ids.out_idx == 0) {
+                p1_connected = 1;
+            }
+        }
+    }
+
+    if (total_connected == 0) {
+        if (bt_hci_get_inquiry()) {
+            port_led_pulse(led_list[0]);
+        }
+        else {
+            set_port_led(0, 0);
+        }
+        return;
+    }
+
+    if (p1_connected && total_connected == 1) {
+        set_port_led(0, 1);
+        return;
+    }
+
+    uint32_t cycle = tick % 300; /* 3.0s cycle (300 * 10ms) */
+
+    if (p1_connected && total_connected > 1) {
+        /* P1 + others: Solid ON with total_connected brief winks (100ms off) at start of cycle */
+        uint8_t is_wink = 0;
+        for (uint8_t w = 0; w < total_connected; w++) {
+            uint32_t start = w * 25; /* 250ms per wink interval */
+            if (cycle >= start && cycle < start + 10) { /* 100ms off */
+                is_wink = 1;
+                break;
+            }
+        }
+        set_port_led(0, is_wink ? 0 : 1);
+    }
+    else {
+        /* P1 NOT connected, but other controllers connected:
+         * Flashes ON highest_player times (250ms ON / 250ms OFF) at start of cycle */
+        uint8_t is_flash = 0;
+        for (uint8_t b = 0; b < highest_player; b++) {
+            uint32_t start = b * 50; /* 500ms per flash cycle */
+            if (cycle >= start && cycle < start + 25) { /* 250ms on */
+                is_flash = 1;
+                break;
+            }
+        }
+        set_port_led(0, is_flash ? 1 : 0);
+    }
+}
+
 static void wired_port_hdl(void) {
     uint32_t update = 0;
     uint16_t port_mask = 0;
@@ -299,6 +365,7 @@ static void wired_port_hdl(void) {
         idx++;
 
 
+#ifdef CONFIG_BLUERETRO_HW2
         if (device->ids.out_idx < hw_config.port_cnt) {
             if (bt_ready) {
                 set_port_led(device->ids.out_idx, 1);
@@ -320,6 +387,16 @@ static void wired_port_hdl(void) {
                 current_pulse_led = 0;
             }
         }
+#else
+        if (device->ids.out_idx > 0 && device->ids.out_idx < hw_config.port_cnt) {
+            if (bt_ready) {
+                set_port_led(device->ids.out_idx, 1);
+            }
+            else if (get_port_led_pin(device->ids.out_idx) != current_pulse_led) {
+                set_port_led(device->ids.out_idx, 0);
+            }
+        }
+#endif
 
 #ifdef CONFIG_BLUERETRO_HW2
         if (device->ids.out_idx != prev_idx) {
@@ -446,6 +523,16 @@ static void sys_mgr_task(void *arg) {
 
     while (1) {
         boot_btn_hdl();
+
+        if (wired_adapter.system_id == PSX || wired_adapter.system_id == PS2) {
+            ps_spi_poll();
+        }
+
+#ifndef CONFIG_BLUERETRO_HW2
+        if (!sys_mgr_get_boot_btn()) {
+            update_onboard_led(cnt);
+        }
+#endif
 
         /* Fetch system cmd to execute */
         if (cmd_q_hdl) {

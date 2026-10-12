@@ -215,6 +215,17 @@ void ps4_set_pending_led(uint8_t dev_id, uint32_t color) {
     }
 }
 
+struct ps_conn_rumble_ctx {
+    esp_timer_handle_t timer;
+    struct bt_dev *device;
+    uint8_t current_burst;
+    uint8_t total_bursts;
+    uint8_t phase; /* 0 = rumble on, 1 = pause off */
+};
+
+static struct ps_conn_rumble_ctx ps_conn_rumble_ctxs[BT_MAX_DEV] = {0};
+static void ps_start_player_rumble(struct bt_dev *device);
+
 void ps4_blink_stop(uint8_t dev_id) {
     if (dev_id < BT_MAX_DEV) {
         struct ps4_blink_ctx *ctx = &ps4_blink_ctxs[dev_id];
@@ -222,6 +233,12 @@ void ps4_blink_stop(uint8_t dev_id) {
             esp_timer_stop(ctx->timer);
             esp_timer_delete(ctx->timer);
             ctx->timer = NULL;
+        }
+        struct ps_conn_rumble_ctx *r_ctx = &ps_conn_rumble_ctxs[dev_id];
+        if (r_ctx->timer) {
+            esp_timer_stop(r_ctx->timer);
+            esp_timer_delete(r_ctx->timer);
+            r_ctx->timer = NULL;
         }
     }
 }
@@ -308,11 +325,13 @@ static void bt_hid_ps5_init_callback(void *arg) {
                 || config.out_cfg[device->ids.out_idx].acc_mode == ACC_BOTH) {
             bt_hid_cmd_ps5_trigger_init(device);
         }
+        ps_start_player_rumble(device);
     }
     else {
-        /* Clone or official DS4: Start connection player blink */
+        /* Clone or official DS4: Start connection player blink and rumble */
         printf("# %s: DS4 (report_type: 0x%02lX, Player %ld)\n", __FUNCTION__, device->ids.report_type, device->ids.out_idx + 1);
         ps4_start_player_blink(device);
+        ps_start_player_rumble(device);
     }
 }
 
@@ -338,6 +357,110 @@ void bt_hid_cmd_ps_set_conf(struct bt_dev *device, void *report) {
         default:
             bt_hid_cmd_ps4_set_conf(device, report);
             break;
+    }
+}
+
+static void ps_conn_rumble_timer_cb(void *arg) {
+    struct ps_conn_rumble_ctx *ctx = (struct ps_conn_rumble_ctx *)arg;
+    struct bt_dev *device = ctx->device;
+
+    if (!device || device->ids.type == BT_NONE || !atomic_test_bit(&device->flags, BT_DEV_HID_INIT_DONE)) {
+        if (ctx->timer) {
+            esp_timer_stop(ctx->timer);
+            esp_timer_delete(ctx->timer);
+            ctx->timer = NULL;
+        }
+        return;
+    }
+
+    struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
+
+    if (ctx->phase == 0) {
+        /* 1.0s rumble burst complete -> stop rumble */
+        if (device->ids.subtype == BT_PS5_DS) {
+            struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
+            set_conf->hf_motor_pwr = 0x00;
+            set_conf->lf_motor_pwr = 0x00;
+            bt_hid_cmd_ps5_set_conf(device, (void *)set_conf);
+        }
+        else {
+            struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
+            set_conf->hf_motor_pwr = 0x00;
+            set_conf->lf_motor_pwr = 0x00;
+            bt_hid_cmd_ps4_set_conf(device, (void *)set_conf);
+        }
+
+        ctx->current_burst++;
+        if (ctx->current_burst >= ctx->total_bursts) {
+            /* All bursts complete! */
+            esp_timer_stop(ctx->timer);
+            esp_timer_delete(ctx->timer);
+            ctx->timer = NULL;
+            return;
+        }
+
+        /* Start 0.5s pause */
+        ctx->phase = 1;
+        esp_timer_start_once(ctx->timer, 500000);
+    }
+    else {
+        /* 0.5s pause complete -> start next 1.0s rumble burst */
+        ctx->phase = 0;
+        if (device->ids.subtype == BT_PS5_DS) {
+            struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
+            set_conf->hf_motor_pwr = 0xFF;
+            set_conf->lf_motor_pwr = 0xFF;
+            bt_hid_cmd_ps5_set_conf(device, (void *)set_conf);
+        }
+        else {
+            struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
+            set_conf->hf_motor_pwr = 0xFF;
+            set_conf->lf_motor_pwr = 0xFF;
+            bt_hid_cmd_ps4_set_conf(device, (void *)set_conf);
+        }
+
+        esp_timer_start_once(ctx->timer, 1000000);
+    }
+}
+
+static void ps_start_player_rumble(struct bt_dev *device) {
+    uint8_t dev_id = device->ids.id;
+    if (dev_id >= BT_MAX_DEV) {
+        return;
+    }
+
+    struct ps_conn_rumble_ctx *ctx = &ps_conn_rumble_ctxs[dev_id];
+    if (ctx->timer) {
+        return;
+    }
+
+    ctx->device = device;
+    ctx->current_burst = 0;
+    ctx->total_bursts = device->ids.out_idx + 1;
+    ctx->phase = 0;
+
+    struct bt_data *bt_data = &bt_adapter.data[dev_id];
+    if (device->ids.subtype == BT_PS5_DS) {
+        struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
+        set_conf->hf_motor_pwr = 0xFF;
+        set_conf->lf_motor_pwr = 0xFF;
+        bt_hid_cmd_ps5_set_conf(device, (void *)set_conf);
+    }
+    else {
+        struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
+        set_conf->hf_motor_pwr = 0xFF;
+        set_conf->lf_motor_pwr = 0xFF;
+        bt_hid_cmd_ps4_set_conf(device, (void *)set_conf);
+    }
+
+    const esp_timer_create_args_t rumble_timer_args = {
+        .callback = &ps_conn_rumble_timer_cb,
+        .arg = (void *)ctx,
+        .name = "ps_rumble_tmr"
+    };
+
+    if (esp_timer_create(&rumble_timer_args, &ctx->timer) == ESP_OK) {
+        esp_timer_start_once(ctx->timer, 1000000);
     }
 }
 

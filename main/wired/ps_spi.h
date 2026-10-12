@@ -8,5 +8,6 @@
 
 void ps_spi_init(uint32_t package);
 void ps_spi_port_cfg(uint16_t mask);
+void ps_spi_poll(void);
 
 #endif /* _PS_SPI_H_ */

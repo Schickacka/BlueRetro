@@ -144,6 +144,7 @@ struct ps_ctrl_port {
     uint32_t idx;
     uint32_t mt_idx;
     uint32_t valid;
+    int64_t last_spi_time;
 };
 
 static struct ps_ctrl_port ps_ctrl_ports[PS_PORT_MAX] = {
@@ -708,6 +709,7 @@ static void packet_end(void *arg) {
     for (uint32_t i = 0; i < PS_PORT_MAX; i++) {
         if (port_int[i]) {
             struct ps_ctrl_port *port = &ps_ctrl_ports[i];
+            port->last_spi_time = esp_timer_get_time();
             set_output_state(port->id, 0);
             port->idx = 0;
             port->mt_idx = 0;
@@ -1099,6 +1101,7 @@ void ps_spi_port_cfg(uint16_t mask) {
                     ps_ctrl_ports[i].rumble_r_idx[j] = 0;
                     ps_ctrl_ports[i].rumble_l_idx[j] = 1;
                 }
+                ps_ctrl_ports[i].last_spi_time = 0;
                 gpio_set_level_iram(ps_ctrl_ports[i].led_pin, 0);
                 set_output_state(i, 0);
             }
@@ -1111,6 +1114,7 @@ void ps_spi_port_cfg(uint16_t mask) {
                 ps_ctrl_ports[i].idx = 0;
                 ps_ctrl_ports[i].mt_idx = 0;
                 ps_ctrl_ports[i].valid = 0;
+                ps_ctrl_ports[i].last_spi_time = 0;
                 memset(ps_ctrl_ports[i].dev_id, 0x41, sizeof(ps_ctrl_ports[0].dev_id));
                 memset(ps_ctrl_ports[i].pend_dev_id, 0x41, sizeof(ps_ctrl_ports[0].pend_dev_id));
                 memset(ps_ctrl_ports[i].dev_desc, 0, sizeof(ps_ctrl_ports[0].dev_desc));
@@ -1121,4 +1125,35 @@ void ps_spi_port_cfg(uint16_t mask) {
         }
     }
     cur_mask = mask;
+}
+
+void ps_spi_poll(void) {
+    int64_t now = esp_timer_get_time();
+
+    for (uint32_t i = 0; i < PS_PORT_MAX; i++) {
+        struct ps_ctrl_port *port = &ps_ctrl_ports[i];
+
+        /* Check PS button even when console is in reset / early boot */
+        ps_analog_btn_hdlr(port, 0);
+
+        /* Console RESET / Idle timeout: if no SPI packets for 1.5s, revert to Digital (0x41) */
+        if (port->last_spi_time && (now - port->last_spi_time > 1500000)) {
+            port->last_spi_time = 0;
+            if (port->dev_id[0] == 0x73) {
+                struct raw_fb fb_data = {0};
+                port->dev_id[0] = 0x41;
+                port->pend_dev_id[0] = 0x41;
+                port->dev_desc[0] = 0;
+                port->rumble_r_state[0] = 0;
+                port->rumble_l_state[0] = 0;
+                gpio_set_level_iram(port->led_pin, 0);
+
+                fb_data.header.wired_id = port->id;
+                fb_data.header.type = FB_TYPE_STATUS_LED;
+                fb_data.header.data_len = 1;
+                fb_data.data[0] = 0;
+                adapter_q_fb(&fb_data);
+            }
+        }
+    }
 }
