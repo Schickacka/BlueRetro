@@ -259,6 +259,17 @@ static void ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
 static void ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_data) {
     struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
 
+    static const uint8_t ps5_player_led_mask[4] = {
+        0x04, /* Player 1: . . * . . (1 LED) */
+        0x0A, /* Player 2: . * . * . (2 LEDs) */
+        0x15, /* Player 3: * . * . * (3 LEDs) */
+        0x1B, /* Player 4: * * . * * (4 LEDs) */
+    };
+
+    set_conf->valid_flag2 |= 0x14;
+    set_conf->lightbar_setup = 0x02;
+    set_conf->player_leds = ps5_player_led_mask[bt_data->base.pids->out_idx & 0x3];
+
     switch (fb_data->type) {
         case FB_TYPE_RUMBLE:
             if (fb_data->state) {
@@ -271,7 +282,6 @@ static void ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
             }
             break;
         case FB_TYPE_PLAYER_LED:
-            set_conf->leds = hw_config.ps_ctrl_colors[bt_data->base.pids->out_idx];
             break;
         case FB_TYPE_STATUS_LED:
             if (fb_data->led) {

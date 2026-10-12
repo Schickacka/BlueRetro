@@ -82,8 +82,17 @@ struct bt_hidp_ps5_set_conf {
     uint8_t l2_haptic_power_level;
     uint8_t tbd6; // Internal speaker volume
     uint8_t use_accurate_rumble;
-    uint8_t tbd7[5];
-    uint32_t leds;
+    uint8_t valid_flag2;
+    uint8_t reserved3[2];
+    uint8_t lightbar_setup;
+    uint8_t player_leds;
+    union {
+        struct {
+            uint8_t rgb[3];
+            uint8_t led_delay;
+        };
+        uint32_t leds;
+    };
     uint8_t tbd8[24];
     uint32_t crc;
 } __packed;

@@ -141,10 +141,99 @@ static void bt_hid_cmd_ps5_trigger_init(struct bt_dev *device) {
     bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_set_conf);
 }
 
+struct ps4_blink_ctx {
+    esp_timer_handle_t timer;
+    struct bt_dev *device;
+    uint8_t current_blink;
+    uint8_t total_blinks;
+    uint8_t phase; /* 0 = off, 1 = blue on */
+};
+
+static struct ps4_blink_ctx ps4_blink_ctxs[BT_MAX_DEV] = {0};
+
+static void ps4_blink_timer_cb(void *arg) {
+    struct ps4_blink_ctx *ctx = (struct ps4_blink_ctx *)arg;
+    struct bt_dev *device = ctx->device;
+
+    if (!device || !atomic_test_bit(&device->flags, BT_DEV_CONNECTED)) {
+        if (ctx->timer) {
+            esp_timer_stop(ctx->timer);
+            esp_timer_delete(ctx->timer);
+            ctx->timer = NULL;
+        }
+        return;
+    }
+
+    struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
+    struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
+
+    if (ctx->phase == 1) {
+        /* Phase 1: Blue ON */
+        struct bt_hidp_ps4_set_conf blink_conf = *set_conf;
+        blink_conf.leds = 0xFF0000; /* Blue (RGB: 0, 0, 255) */
+        bt_hid_cmd_ps4_set_conf(device, (void *)&blink_conf);
+        ctx->phase = 0;
+    }
+    else {
+        /* Phase 0: Dark / OFF */
+        struct bt_hidp_ps4_set_conf blink_conf = *set_conf;
+        blink_conf.leds = 0x000000;
+        bt_hid_cmd_ps4_set_conf(device, (void *)&blink_conf);
+        ctx->current_blink++;
+        ctx->phase = 1;
+
+        if (ctx->current_blink >= ctx->total_blinks) {
+            /* Blink sequence complete! Restore normal SCPH-1200 mode LED */
+            esp_timer_stop(ctx->timer);
+            esp_timer_delete(ctx->timer);
+            ctx->timer = NULL;
+            bt_hid_cmd_ps4_set_conf(device, (void *)set_conf);
+        }
+    }
+}
+
+static void ps4_start_player_blink(struct bt_dev *device) {
+    uint8_t dev_id = device->ids.id;
+    if (dev_id >= BT_MAX_DEV) {
+        return;
+    }
+
+    struct ps4_blink_ctx *ctx = &ps4_blink_ctxs[dev_id];
+    if (ctx->timer) {
+        esp_timer_stop(ctx->timer);
+        esp_timer_delete(ctx->timer);
+        ctx->timer = NULL;
+    }
+
+    ctx->device = device;
+    ctx->current_blink = 0;
+    ctx->total_blinks = device->ids.out_idx + 1;
+    ctx->phase = 1;
+
+    const esp_timer_create_args_t blink_timer_args = {
+        .callback = &ps4_blink_timer_cb,
+        .arg = (void *)ctx,
+        .name = "ps4_blink_tmr"
+    };
+
+    if (esp_timer_create(&blink_timer_args, &ctx->timer) == ESP_OK) {
+        /* 250ms per half-period (250ms on, 250ms off) */
+        esp_timer_start_periodic(ctx->timer, 250000);
+        ps4_blink_timer_cb((void *)ctx);
+    }
+}
+
 static void bt_hid_ps5_init_callback(void *arg) {
     struct bt_dev *device = (struct bt_dev *)arg;
 
     if (device->ids.subtype == BT_PS5_DS || device->ids.report_type == BT_HIDP_PS5_STATUS) {
+        static const uint8_t ps5_player_led_mask[4] = {
+            0x04, /* Player 1: . . * . . */
+            0x0A, /* Player 2: . * . * . */
+            0x15, /* Player 3: * . * . * */
+            0x1B, /* Player 4: * * . * * */
+        };
+
         struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
         struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
 
@@ -153,7 +242,10 @@ static void bt_hid_ps5_init_callback(void *arg) {
         set_conf->conf0 = 0x02;
         set_conf->cmd = 0x03;
         set_conf->conf1 = 0x04;
-        set_conf->leds = hw_config.ps_ctrl_colors[device->ids.out_idx];
+        set_conf->valid_flag2 = 0x14; /* Enable lightbar + player indicator */
+        set_conf->lightbar_setup = 0x02;
+        set_conf->player_leds = ps5_player_led_mask[device->ids.out_idx & 0x3];
+        set_conf->leds = 0x202020; /* Boot: Soft Grey / White */
 
         struct bt_hidp_ps5_set_conf ps5_clear_led = {
             .conf0 = 0x02,
@@ -162,9 +254,12 @@ static void bt_hid_ps5_init_callback(void *arg) {
         struct bt_hidp_ps5_set_conf ps5_set_led = {
             .conf0 = 0x02,
             .conf1 = 0x04,
+            .valid_flag2 = 0x14,
+            .lightbar_setup = 0x02,
+            .player_leds = ps5_player_led_mask[device->ids.out_idx & 0x3],
+            .leds = 0x202020,
         };
-        ps5_set_led.leds = hw_config.ps_ctrl_colors[device->ids.out_idx];
-        printf("# %s: PS5 DualSense\n", __FUNCTION__);
+        printf("# %s: PS5 DualSense (Player %ld)\n", __FUNCTION__, device->ids.out_idx + 1);
 
         bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_clear_led);
         bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_set_led);
@@ -176,11 +271,9 @@ static void bt_hid_ps5_init_callback(void *arg) {
         }
     }
     else {
-        /* Clone or official DS4 */
-        struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
-        struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
-        printf("# %s: DS4 (report_type: 0x%02lX)\n", __FUNCTION__, device->ids.report_type);
-        bt_hid_cmd_ps4_set_conf(device, (void *)set_conf);
+        /* Clone or official DS4: Start connection player blink */
+        printf("# %s: DS4 (report_type: 0x%02lX, Player %ld)\n", __FUNCTION__, device->ids.report_type, device->ids.out_idx + 1);
+        ps4_start_player_blink(device);
     }
 
     esp_timer_delete(device->timer_hdl);
