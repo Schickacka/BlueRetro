@@ -118,34 +118,34 @@ struct ps_ctrl_port {
     struct spi_cfg cfg;
     spi_dev_t *spi_hw;
     uint8_t id;
-    uint8_t active_port_type;
-    uint8_t mc_cmd;
-    uint8_t mc_flags;
-    uint8_t mc_crc;
-    uint16_t mc_addr;
+    volatile uint8_t active_port_type;
+    volatile uint8_t mc_cmd;
+    volatile uint8_t mc_flags;
+    volatile uint8_t mc_crc;
+    volatile uint16_t mc_addr;
     uint8_t led_pin;
-    uint8_t root_dev_type;
-    uint8_t mt_state;
+    volatile uint8_t root_dev_type;
+    volatile uint8_t mt_state;
     uint8_t mt_first_port;
-    uint8_t tx_buf_len;
+    volatile uint8_t tx_buf_len;
     uint8_t tx_buf[PS_BUFFER_SIZE];
     uint8_t rx_buf[2][PS_BUFFER_SIZE];
-    uint8_t active_rx_buf;
-    uint8_t dev_type[MT_PORT_MAX];
-    uint8_t dev_id[MT_PORT_MAX];
-    uint8_t pend_dev_id[MT_PORT_MAX];
-    uint8_t rumble_r_state[MT_PORT_MAX];
-    uint8_t rumble_l_state[MT_PORT_MAX];
-    uint8_t rumble_r_idx[MT_PORT_MAX];
-    uint8_t rumble_l_idx[MT_PORT_MAX];
-    uint8_t rumble_r_val[MT_PORT_MAX];
-    uint8_t rumble_l_val[MT_PORT_MAX];
-    uint8_t analog_btn[MT_PORT_MAX];
-    uint32_t dev_desc[MT_PORT_MAX];
-    uint32_t idx;
-    uint32_t mt_idx;
-    uint32_t valid;
-    int64_t last_spi_time;
+    volatile uint8_t active_rx_buf;
+    volatile uint8_t dev_type[MT_PORT_MAX];
+    volatile uint8_t dev_id[MT_PORT_MAX];
+    volatile uint8_t pend_dev_id[MT_PORT_MAX];
+    volatile uint8_t rumble_r_state[MT_PORT_MAX];
+    volatile uint8_t rumble_l_state[MT_PORT_MAX];
+    volatile uint8_t rumble_r_idx[MT_PORT_MAX];
+    volatile uint8_t rumble_l_idx[MT_PORT_MAX];
+    volatile uint8_t rumble_r_val[MT_PORT_MAX];
+    volatile uint8_t rumble_l_val[MT_PORT_MAX];
+    volatile uint8_t analog_btn[MT_PORT_MAX];
+    volatile uint32_t dev_desc[MT_PORT_MAX];
+    volatile uint32_t idx;
+    volatile uint32_t mt_idx;
+    volatile uint32_t valid;
+    volatile int64_t last_spi_time;
 };
 
 static struct ps_ctrl_port ps_ctrl_ports[PS_PORT_MAX] = {
@@ -221,12 +221,13 @@ static inline void load_mouse_axes(uint8_t port, uint8_t *axes) {
 static uint32_t get_dtr_state(uint32_t port) {
     if (port == 0) {
         if (GPIO.in1.val & BIT(P1_DTR_PIN - 32)) {
-            return 1;
+            /* Confirm high state with a second read to filter out transient capacitive crosstalk spikes */
+            return (GPIO.in1.val & BIT(P1_DTR_PIN - 32)) ? 1 : 0;
         }
     }
     else {
         if (GPIO.in & BIT(P2_DTR_PIN)) {
-            return 1;
+            return (GPIO.in & BIT(P2_DTR_PIN)) ? 1 : 0;
         }
     }
     return 0;
@@ -285,11 +286,13 @@ static void ps_analog_btn_hdlr(struct ps_ctrl_port *port, uint8_t id) {
                 port->analog_btn[id] = 0;
                 if (port->dev_id[id] == 0x41) {
                     port->dev_id[id] = 0x73;
+                    port->pend_dev_id[id] = 0x73;
                     port->dev_desc[id] = 0x3FFFF;
                     port->rumble_r_state[id] = 1;
                     port->rumble_l_state[id] = 1;
                     port->rumble_r_idx[id] = 0;
                     port->rumble_l_idx[id] = 1;
+                    __sync_synchronize();
                     if (id == 0) {
                         gpio_set_level_iram(ps_ctrl_ports[port->mt_first_port ? 1 : 0].led_pin, 1);
                     }
@@ -297,9 +300,11 @@ static void ps_analog_btn_hdlr(struct ps_ctrl_port *port, uint8_t id) {
                 }
                 else {
                     port->dev_id[id] = 0x41;
+                    port->pend_dev_id[id] = 0x41;
                     port->dev_desc[id] = 0;
                     port->rumble_r_state[id] = 0;
                     port->rumble_l_state[id] = 0;
+                    __sync_synchronize();
                     if (id == 0) {
                         gpio_set_level_iram(ps_ctrl_ports[port->mt_first_port ? 1 : 0].led_pin, 0);
                     }
@@ -338,6 +343,7 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
             }
             port->rumble_r_val[id] = req[port->rumble_r_idx[id]];
             port->rumble_l_val[id] = req[port->rumble_l_idx[id]];
+            __sync_synchronize();
             break;
         }
         case 0x43:
@@ -351,6 +357,7 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
             else {
                 port->dev_id[id] = port->pend_dev_id[id];
             }
+            __sync_synchronize();
             break;
         }
         case 0x44:
@@ -375,6 +382,7 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                     }
                     fb_data.data[0] = 0;
                 }
+                __sync_synchronize();
                 fb_data.header.wired_id = id + port->mt_first_port;
                 fb_data.header.type = FB_TYPE_STATUS_LED;
                 fb_data.header.data_len = 1;
@@ -398,6 +406,7 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                         port->rumble_l_idx[id] = i;
                     }
                 }
+                __sync_synchronize();
             }
             break;
         }
@@ -412,6 +421,7 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                 else {
                     port->pend_dev_id[id] = 0x73;
                 }
+                __sync_synchronize();
             }
             break;
         }
@@ -514,7 +524,6 @@ static void ps_cmd_rsp_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
         }
         __attribute__ ((fallthrough));
         case 0x42:
-        default:
         {
             uint32_t size = (port->dev_id[id] & 0xF) * 2;
             if (!(port->root_dev_type == DEV_PSX_MULTITAP && port->mt_state)) {
@@ -523,6 +532,12 @@ static void ps_cmd_rsp_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
             if (size < 6) {
                 size = 6;
             }
+
+            /* Boundary check: ensure rsp + size stays within tx_buf */
+            if ((uint8_t *)rsp + size > (uint8_t *)port->tx_buf + sizeof(port->tx_buf)) {
+                size = (uint32_t)((uint8_t *)port->tx_buf + sizeof(port->tx_buf) - (uint8_t *)rsp);
+            }
+
             switch (port->dev_type[id]) {
                 case DEV_PSX_PS_2_KB_MOUSE_ADAPTER:
                 {
@@ -532,8 +547,10 @@ static void ps_cmd_rsp_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                     break;
                 }
                 case DEV_PSX_MOUSE:
-                    memcpy(rsp, wired_adapter.data[id + port->mt_first_port].output, 2);
-                    load_mouse_axes(id + port->mt_first_port, &rsp[2]);
+                    if ((uint8_t *)rsp + 2 <= (uint8_t *)port->tx_buf + sizeof(port->tx_buf)) {
+                        memcpy(rsp, wired_adapter.data[id + port->mt_first_port].output, 2);
+                        load_mouse_axes(id + port->mt_first_port, &rsp[2]);
+                    }
                     break;
                 default:
                     *(uint16_t *)&rsp[0] = wired_adapter.data[id + port->mt_first_port].output16[0]
@@ -558,9 +575,21 @@ static void ps_cmd_rsp_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                     ++wired_adapter.data[id + port->mt_first_port].frame_cnt;
                     break;
             }
-            if (cmd != 0x42 && cmd != 0x43) {
-                ets_printf("# P%d Ukn: %02X\n", id, cmd);
-            }
+            break;
+        }
+        default:
+        {
+            /*
+             * Unknown / unsupported command:
+             * On real PlayStation hardware, unsupported commands are not acknowledged.
+             * Overwrite the preceding 0x5A with idle High-Z (0xFF), fill response with 0xFF,
+             * and clear port->valid so that toggle_dsr() does NOT fire an invalid ACK.
+             */
+            *(rsp - 1) = 0xFF;
+            memset(rsp, 0xFF, 6);
+            port->valid = 0;
+            port->tx_buf_len = 0;
+            ets_printf("# P%d Ukn: %02X\n", id, cmd);
             break;
         }
     }
@@ -711,6 +740,7 @@ static void packet_end(void *arg) {
         if (port_int[i]) {
             struct ps_ctrl_port *port = &ps_ctrl_ports[i];
             port->last_spi_time = esp_timer_get_time();
+            __sync_synchronize();
             set_output_state(port->id, 0);
             port->idx = 0;
             port->mt_idx = 0;
@@ -793,6 +823,12 @@ static void spi_isr(void* arg) {
         delay_us(0);
     }
     else {
+        /*
+         * PlayStation 1 SIO hardware requires a 12-16us inter-byte delay before
+         * receiving the controller ACK (DSR pulse). If ACK is asserted too quickly
+         * (<10us after the 8th bit clock), the console's SIO state machine misses
+         * the ACK pulse and terminates packet reception. 14us precisely matches Sony timing.
+         */
         delay_us(14);
     }
     port->rx_buf[port->active_rx_buf][port->idx] = port->spi_hw->data_buf[0];
@@ -1133,27 +1169,35 @@ void ps_spi_poll(void) {
 
     for (uint32_t i = 0; i < PS_PORT_MAX; i++) {
         struct ps_ctrl_port *port = &ps_ctrl_ports[i];
+        uint32_t dev_count = (port->root_dev_type == DEV_PSX_MULTITAP) ? MT_PORT_MAX : 1;
 
         /* Check PS button even when console is in reset / early boot */
-        ps_analog_btn_hdlr(port, 0);
+        for (uint32_t j = 0; j < dev_count; j++) {
+            ps_analog_btn_hdlr(port, j);
+        }
 
         /* Console RESET / Idle timeout: if no SPI packets for 1.5s, revert to Digital (0x41) */
         if (port->last_spi_time && (now - port->last_spi_time > 1500000)) {
             port->last_spi_time = 0;
-            if (port->dev_id[0] == 0x73) {
-                struct raw_fb fb_data = {0};
-                port->dev_id[0] = 0x41;
-                port->pend_dev_id[0] = 0x41;
-                port->dev_desc[0] = 0;
-                port->rumble_r_state[0] = 0;
-                port->rumble_l_state[0] = 0;
-                gpio_set_level_iram(port->led_pin, 0);
+            for (uint32_t j = 0; j < dev_count; j++) {
+                if (port->dev_id[j] == 0x73) {
+                    struct raw_fb fb_data = {0};
+                    port->dev_id[j] = 0x41;
+                    port->pend_dev_id[j] = 0x41;
+                    port->dev_desc[j] = 0;
+                    port->rumble_r_state[j] = 0;
+                    port->rumble_l_state[j] = 0;
+                    __sync_synchronize();
+                    if (j == 0) {
+                        gpio_set_level_iram(port->led_pin, 0);
+                    }
 
-                fb_data.header.wired_id = port->id;
-                fb_data.header.type = FB_TYPE_STATUS_LED;
-                fb_data.header.data_len = 1;
-                fb_data.data[0] = 0;
-                adapter_q_fb(&fb_data);
+                    fb_data.header.wired_id = port->id + (port->root_dev_type == DEV_PSX_MULTITAP ? j : 0);
+                    fb_data.header.type = FB_TYPE_STATUS_LED;
+                    fb_data.header.data_len = 1;
+                    fb_data.data[0] = 0;
+                    adapter_q_fb(&fb_data);
+                }
             }
         }
     }
