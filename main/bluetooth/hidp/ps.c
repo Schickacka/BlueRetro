@@ -9,6 +9,7 @@
 #include "adapter/adapter.h"
 #include "adapter/config.h"
 #include "bluetooth/host.h"
+#include "wired/ps_spi.h"
 #include "ps.h"
 
 static void bt_hid_cmd_ps5_set_conf(struct bt_dev *device, void *report);
@@ -255,7 +256,11 @@ static void ps4_start_player_blink(struct bt_dev *device) {
     }
 
     ctx->device = device;
-    ctx->pending_led = 0x101010; /* Default: Digital mode Soft Grey / White (50% brightness) */
+    uint8_t is_analog = 0;
+    if (wired_adapter.system_id == PSX || wired_adapter.system_id == PS2) {
+        is_analog = ps_spi_is_analog(device->ids.out_idx);
+    }
+    ctx->pending_led = is_analog ? 0x000080 : 0x101010; /* SCPH-1200 style: Red for Analog, Soft Grey for Digital */
     ctx->current_breath = 0;
     ctx->total_breaths = device->ids.out_idx + 1;
     ctx->step = 0;
@@ -293,6 +298,12 @@ static void bt_hid_ps5_init_callback(void *arg) {
         struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
         struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
 
+        uint8_t is_analog = 0;
+        if (wired_adapter.system_id == PSX || wired_adapter.system_id == PS2) {
+            is_analog = ps_spi_is_analog(device->ids.out_idx);
+        }
+        uint32_t init_led = is_analog ? 0x000080 : 0x101010;
+
         /* Init output data for Rumble/LED feedback */
         memset(set_conf, 0x00, sizeof(*set_conf));
         set_conf->conf0 = 0x02;
@@ -301,7 +312,7 @@ static void bt_hid_ps5_init_callback(void *arg) {
         set_conf->valid_flag2 = 0x14; /* Enable lightbar + player indicator */
         set_conf->lightbar_setup = 0x02;
         set_conf->player_leds = ps5_player_led_mask[device->ids.out_idx & 0x3];
-        set_conf->leds = 0x101010; /* Boot: Soft Grey / White (50% brightness) */
+        set_conf->leds = init_led;
 
         struct bt_hidp_ps5_set_conf ps5_clear_led = {
             .conf0 = 0x02,
@@ -313,7 +324,7 @@ static void bt_hid_ps5_init_callback(void *arg) {
             .valid_flag2 = 0x14,
             .lightbar_setup = 0x02,
             .player_leds = ps5_player_led_mask[device->ids.out_idx & 0x3],
-            .leds = 0x101010,
+            .leds = init_led,
         };
         printf("# %s: PS5 DualSense (Player %ld)\n", __FUNCTION__, device->ids.out_idx + 1);
 

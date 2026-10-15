@@ -113,6 +113,7 @@ enum {
 #define MC_BLOCK_SIZE 128
 #define PS_PORT_MAX 2
 #define MT_PORT_MAX 4
+#define PS_IDLE_RESET_US 3000000 /* 3.0s idle timeout to detect console reset */
 
 struct ps_ctrl_port {
     struct spi_cfg cfg;
@@ -589,7 +590,9 @@ static void ps_cmd_rsp_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
             memset(rsp, 0xFF, 6);
             port->valid = 0;
             port->tx_buf_len = 0;
+#ifdef DEBUG_PS_SPI
             ets_printf("# P%d Ukn: %02X\n", id, cmd);
+#endif
             break;
         }
     }
@@ -1176,8 +1179,8 @@ void ps_spi_poll(void) {
             ps_analog_btn_hdlr(port, j);
         }
 
-        /* Console RESET / Idle timeout: if no SPI packets for 1.5s, revert to Digital (0x41) */
-        if (port->last_spi_time && (now - port->last_spi_time > 1500000)) {
+        /* Console RESET / Idle timeout: if no SPI packets for PS_IDLE_RESET_US, revert to Digital (0x41) */
+        if (port->last_spi_time && (now - port->last_spi_time > PS_IDLE_RESET_US)) {
             port->last_spi_time = 0;
             for (uint32_t j = 0; j < dev_count; j++) {
                 if (port->dev_id[j] == 0x73) {
@@ -1201,4 +1204,11 @@ void ps_spi_poll(void) {
             }
         }
     }
+}
+
+uint8_t ps_spi_is_analog(uint8_t port_id) {
+    if (port_id < PS_PORT_MAX) {
+        return (ps_ctrl_ports[port_id].dev_id[0] == 0x73 || ps_ctrl_ports[port_id].pend_dev_id[0] == 0x73);
+    }
+    return 0;
 }

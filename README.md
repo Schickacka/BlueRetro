@@ -1,129 +1,117 @@
-# 🎮 BlueRetro — PlayStation 1 Custom Edition (v0.1)
+# BlueRetro — PlayStation 1 Custom Edition (v0.2)
 
-<p align="center">
-  <img src="static/PNGs/BRE_Logo_Color_Outline.png" width="450"/>
-</p>
-
-<p align="center">
-  <b>Firmware customizado de alta performance para receptor interno/externo BlueRetro no PlayStation 1 (ESP32 DevKit).</b><br>
-  <i>Desenvolvido por <b>Schickacka</b> com base no projeto pioneiro de Jacques Gagnon (<a href="https://github.com/darthcloud/BlueRetro">BlueRetro</a>).</i>
-</p>
+Firmware customizado de alta performance para receptor Bluetooth BlueRetro voltado ao PlayStation 1 (ESP32 DevKit). Desenvolvido por **Schickacka**, baseado no projeto de engenharia reversa e emulação sem fio de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)).
 
 ---
 
-## 🚀 O que esta versão traz de novo (Changelog v0.1)
+## 1. Visão Geral das Modificações da Versão 0.2
 
-Esta edição foi desenvolvida sob medida para resolver limitações do BlueRetro clássico em instalações no PlayStation 1 (especialmente consoles PU-8, SCPH-3500 e posteriores), aprimorando a experiência com **DualShock 4** e **DualSense (PS5)**:
+Esta edição foi projetada para resolver limitações do BlueRetro clássico em instalações no PlayStation 1 (consoles PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41), com foco em controles **DualShock 4** e **DualSense (PS5)**:
 
-### 1. 💡 LED Onboard Inteligente (GPIO 2 no ESP32)
-* **0 Controles conectados:**
-  * Modo busca / pareamento (`inquiry` ativo): **Pulsando / Respirando suavemente**.
-  * Sem busca: **Totalmente apagado**.
-* **Apenas Controle 1 conectado:**
-  * **Aceso contínuo** (100% aceso).
-* **Controle 1 + outros controles (P1 + P2, etc.):**
-  * Permanece aceso contínuo, emitindo piscadinhas rápidas **apagadas** (*winks* de 100ms) a cada 3 segundos indicando a quantidade de controles conectados.
-* **Controle 1 desconectado, mas outro controle conectado (ex: apenas o P2):**
-  * Permanece apagado e pisca **aceso** a cada 3 segundos o número de vezes correspondente ao maior controle conectado (ex: 2 piscadas para o P2).
-
-### 2. 📳 Feedback Háptico na Conexão (Estilo 8BitDo)
-* Assim que o controle Bluetooth conecta, ele vibra os motores em pulsos rápidos de **0,5 segundo** (500ms) com pausas de **0,3 segundo** indicando o número do jogador:
-  * **Controle 1:** 1 toque ágil de 0.5s.
-  * **Controle 2:** 2 toques ágeis de 0.5s (0.5s vibra ➔ 0.3s pausa ➔ 0.5s vibra).
-  * **Controle 3 / 4:** 3 e 4 toques respectivamente.
-
-### 3. 🌙 Modo Noturno com Brilho a 50% (Eye-Friendly)
-* A barra de luz do DualShock 4 e DualSense foi recalibrada para 50% de intensidade, perfeita para jogar no escuro sem ofuscar a visão:
-  * **Modo Analógico (SCPH-1200):** Vermelho suave (`R=128`).
-  * **Modo Digital:** Branco/Cinza ambiente discreto (`RGB=16, 16, 16`).
-  * **Respiração de Conexão:** Onda azul suave até 50% (`B=128`).
-
-### 4. 🔄 Correção de Travamento de Analógico no RESET (Caso *Resident Evil 3*)
-* Jogos como *Resident Evil 3* ativam o modo Analógico via software (`0x73`). Ao pressionar o botão físico **RESET** do PS1, o console reinicia a BIOS enquanto o barramento SPI silencia temporariamente.
-* Nesta versão, implementamos um **timeout de inatividade de 1.5s**: se o console for resetado e o barramento SPI parar de se comunicar, o receptor reverte automaticamente para **Digital (`0x41`)**, apaga o LED analógico e volta o controle para o tom neutro.
-* O botão **PS** agora é verificado continuamente via polling em segundo plano (<0,1 µs de CPU), permitindo alternar Digital/Analógico a qualquer momento sem travar.
-
-### 5. 👥 Isolamento Total de Hotplug Multiplayer & Vibração no P2
-* Corrigido o bug onde desconectar o Controle 2 deixava o Controle 1 inoperante na tela da BIOS.
-* O Controle 2 agora possui suporte completo a vibração em jogos (*Tony Hawk's Pro Skater 2*, etc.) e suporte a controles paralelos/clones de PS4.
-
-### 6. ⚡ Zero Input Lag
-* O barramento SPI com o PlayStation roda em código *bare-metal* dedicado no **Core 1** do ESP32 com resposta em microssegundos (idêntico a um controle físico original). Todas as nossas rotinas adicionais rodam no Core 0 sem adicionar sequer 1 microssegundo de atraso.
+* **Sincronização Atômica entre Núcleos (Core 1 ↔ Core 0):**
+  * Campos de estado (`dev_id`, `pend_dev_id`, `rumble_*`, `analog_btn`, `last_spi_time`) declarados como `volatile`.
+  * Barreiras de memória explícitas (`__sync_synchronize()`) em todas as transições de estado, garantindo coerência de cache e eliminando condições de corrida entre a ISR baremetal do Core 1 e as tarefas do Core 0.
+* **Tratamento Robusto de Comandos SPI e Fallback Neutro:**
+  * Comandos desconhecidos ou não suportados pelo PlayStation não geram pulso falso de ACK (`DSR`), retornando nível neutro High-Z (`0xFF`) e prevenindo travamentos de protocolo no console.
+  * Proteção contra transbordamento de buffer (*boundary check*) em todas as montagens de resposta em `tx_buf`.
+* **Filtro de Ruído na Linha de Seleção (DTR / ATT):**
+  * Confirmação de amostragem em dois estágios para o pino de seleção (GPIO 34), prevenindo falsos disparos causados por acoplamento capacitivo das transições de clock (SCK).
+* **Detecção Inteligente de Reset do Console (Caso *Resident Evil 3*):**
+  * Se o barramento SPI silenciar por mais de 3,0 segundos (`PS_IDLE_RESET_US`) — indicando que o console foi reiniciado fisicamente pelo botão RESET —, o adaptador reverte automaticamente para o modo Digital (`0x41`), apaga o LED analógico e reajusta o feedback do controle, prevenindo o bloqueio do jogo na tela de avisos.
+* **Sincronização Imediata de LED na Conexão:**
+  * Se um controle Bluetooth for conectado enquanto o console já estiver rodando um jogo em modo Analógico (`0x73`), o controle assume imediatamente a cor vermelha (estilo SCPH-1200) ao término da animação de pareamento.
+* **Padrão de LED Onboard Otimizado (GPIO 2):**
+  * O ciclo de piscadas agora é dimensionado dinamicamente para comportar todos os jogadores conectados sem suprimir piscadas.
+  * O roteamento de matriz GPIO do LEDC é acionado exclusivamente na transição de estado, poupando ciclos de CPU da tarefa `sys_mgr_task`.
+* **Feedback Háptico na Conexão (Identificação por Jogador):**
+  * Ao parear, o controle vibra em pulsos curtos e ágeis de 500 ms com intervalos de 300 ms indicando o número da porta (1 pulso para Player 1, 2 pulsos para Player 2, etc.).
+* **Modo Noturno com Brilho a 50%:**
+  * Barra de luz calibrada para iluminação confortável em ambientes escuros:
+    * Analógico (SCPH-1200): Vermelho suave (`R=128`).
+    * Digital: Cinza/Branco ambiente (`RGB=16, 16, 16`).
 
 ---
 
-## 🛠️ Esquema de Ligação (Pinout de Hardware)
+## 2. Esquema Elétrico e Pinagem (Hardware Pinout)
 
-### Conexão do ESP32 DevKit à Porta de Controles do PS1
+> **Importante:** A pinagem abaixo reflete estritamente as definições do driver baremetal de hardware em `ps_spi.c`. Para instalações de duas portas (Player 1 e Player 2), cada porta possui linhas dedicadas para permitir operação concorrente independente.
+
+### 2.1. Conector de Controles do PlayStation 1
 
 ```text
                [ 9   7   6 ]   [ 5   4   3 ]   [ 2   1 ]  (Porta do Console PS1)
                -----------------------------------------
 ```
 
-| Pino PS1 | Sinal PS1 | Conexão ESP32 (Porta 1) | Conexão ESP32 (Porta 2) | Observações |
-| :---: | :---: | :---: | :---: | :--- |
-| **1** | **DATA** | **GPIO 19** | **GPIO 22** | Linha de dados para o PS1 (Requer pull-up de 1kΩ–10kΩ para 3.3V se externo) |
-| **2** | **CMND** | **GPIO 23** | **GPIO 23** | Linha de comando compartilhada |
-| **3** | **7.6V** | *Não conectar ao ESP32* | *Não conectar* | Tensão do motor de vibração original do console |
-| **4** | **GND** | **GND** | **GND** | Terra comum |
-| **5** | **3.5V** | **3.3V** *(ou VIN)* | **3.3V** *(ou VIN)* | Linha de alimentação lógica |
-| **6** | **ATT (SEL)** | **GPIO 5** | **GPIO 26** | Seleção individual de porta |
-| **7** | **CLK** | **GPIO 18** | **GPIO 18** | Clock SPI compartilhado |
-| **9** | **ACK** | **GPIO 21** | **GPIO 27** | Confirmação de recebimento |
+| Pino PS1 | Sinal PS1 | Direção (Console) | Conexão ESP32 (Porta 1) | Conexão ESP32 (Porta 2) | Observações Elétricas |
+| :---: | :---: | :---: | :---: | :---: | :--- |
+| **1** | **DATA** | Entrada | **GPIO 19** | **GPIO 22** | Linha serial de dados (Open-Drain, pull-up 3.5V no console) |
+| **2** | **CMND** | Saída | **GPIO 32** | **GPIO 27** | Linha de comando serial do console |
+| **3** | **7.6V** | Saída | *Não conectar* | *Não conectar* | Tensão dos motores de vibração originais |
+| **4** | **GND** | Referência | **GND** | **GND** | Referência comum de terra (0V) |
+| **5** | **3.5V** | Saída | **3.3V** | **3.3V** | Alimentação lógica (conectar no pino 3.3V do ESP32; **nunca no VIN**) |
+| **6** | **ATT (SEL)** | Saída | **GPIO 34** | **GPIO 5** | Seleção de porta (nível baixo ativo) |
+| **7** | **CLK** | Saída | **GPIO 33** | **GPIO 26** | Clock SPI serial (~250 kHz) |
+| **9** | **ACK** | Entrada | **GPIO 21** | **GPIO 25** | Pulso de confirmação de recepção de byte |
 
-> 💡 **Dica de Instalação Interna:** Se estiver instalando internamente na placa-mãe (ex: PU-8), solde os fios diretamente nos pontos de teste (test points) ou no verso da placa do conector de controles.
+### 2.2. LEDs Indicadores de Modo Analógico (Opcional)
 
----
-
-## 📦 Como Instalar / Gravar o Firmware no ESP32
-
-### Método 1: Pacote Rápido para Windows (Recomendado)
-
-1. Baixe o arquivo **[`BlueRetro_PS1_Custom_v0.1_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba **Releases**.
-2. Extraia o arquivo zip em qualquer pasta do computador.
-3. Conecte o ESP32 na porta USB do PC.
-4. Dê dois cliques em **`flash_windows.bat`**.
-5. Digite a sua porta COM (exemplo: `COM6`) e pressione Enter.
-6. Pronto! O script gravará as partições e o firmware automaticamente com verificação.
+| Sinal | Conexão ESP32 | Descrição |
+| :--- | :---: | :--- |
+| **LED Analógico Porta 1** | **GPIO 12** | Nível alto (3.3V) quando a Porta 1 está em modo Analógico |
+| **LED Analógico Porta 2** | **GPIO 15** | Nível alto (3.3V) quando a Porta 2 está em modo Analógico |
+| **LED Onboard (Status BT)**| **GPIO 2** | LED embutido da placa de desenvolvimento (status de conexão) |
 
 ---
 
-### Método 2: Instalação Manual via Terminal (Qualquer SO)
+## 3. Diretrizes de Alimentação
 
-Certifique-se de ter o Python e o `esptool` instalados:
+1. **Alimentação Direta pelos 3.5V do Console (Pino 5):**
+   * Deve ser conectada diretamente ao pino **3.3V** do módulo ESP32.
+   * **Não conecte a linha de 3.5V ao pino VIN/5V do ESP32**: o pino VIN alimenta um regulador linear LDO (ex.: AMS1117) cuja queda de tensão interna (*dropout*) exige no mínimo 4.5V a 5.0V para operar, o que causará desligamentos espontâneos (*brownout*) no microcontrolador.
+2. **Alimentação Alternativa via Regulador Step-Down (Recomendado para estabilidade máxima):**
+   * Utilize um mini conversor Buck DC-DC (ex.: MP1584EN) conectado ao **Pino 3 (7.6V)** da porta de controle.
+   * Ajuste o regulador para **5.0V** estáveis e conecte a saída ao pino **VIN (5V)** do ESP32.
+
+---
+
+## 4. Instalação e Gravação do Firmware
+
+### 4.1. Pacote Automatizado para Windows
+
+1. Baixe o pacote **`BlueRetro_PS1_Custom_v0.2_Package.zip`** disponível na aba [Releases](https://github.com/Schickacka/BlueRetro/releases).
+2. Extraia o conteúdo em uma pasta local.
+3. Conecte o ESP32 ao computador via cabo USB.
+4. Execute o arquivo **`flash_windows.bat`** e informe a porta serial identificada (exemplo: `COM6`).
+
+### 4.2. Gravação Manual via Linha de Comando (esptool)
+
+Caso prefira gravar manualmente via terminal:
 ```bash
-pip install esptool
+python -m esptool --chip esp32 --port COMx -b 921600 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 bootloader.bin 0x8000 partition-table.bin 0xd000 ota_data_initial.bin 0x10000 BlueRetro_hw1_playstation.bin
 ```
 
-Execute o comando de gravação diretamente:
+---
+
+## 5. Compilação a Partir do Código-Fonte
+
+O projeto utiliza o framework ESP-IDF v5.5 (ou o container oficial do BlueRetro):
+
 ```bash
-python -m esptool --chip esp32 --port COM6 -b 921600 --before default-reset --after hard-reset write-flash --flash-mode dio --flash-size 4MB --flash-freq 40m 0x1000 bootloader.bin 0x8000 partition-table.bin 0xd000 ota_data_initial.bin 0x10000 BlueRetro_hw1_playstation.bin
+# 1. Clonar o repositorio recursivamente com os submodulos (obrigatorio)
+git clone --recursive https://github.com/Schickacka/BlueRetro.git
+cd BlueRetro
+
+# 2. Configurar o alvo para hardware 1 (PlayStation)
+cp configs/hw1/playstation sdkconfig
+
+# 3. Compilar
+BR_HW=_hw1 BR_SYS=_playstation idf.py reconfigure build
 ```
-*(Substitua `COM6` pela porta serial do seu ESP32 no Windows, ou `/dev/ttyUSB0` no Linux/macOS).*
 
 ---
 
-## 🎮 Como Parear e Usar os Controles
+## 6. Licença e Reconhecimentos
 
-### Pareando o Controle:
-1. Ligue o PlayStation 1 com o receptor BlueRetro conectado.
-2. O LED azul onboard do ESP32 começará a **respirar suavemente**, indicando que está aguardando conexão.
-3. No seu controle:
-   * **DualShock 4:** Segure os botões **PS + SHARE** juntos até a barra de luz piscar em rajadas duplas.
-   * **DualSense (PS5):** Segure os botões **PS + CREATE** juntos até os LEDs piscarem rápido.
-4. O controle conectará em poucos segundos:
-   * Dará uma vibração tátil de **0,5 segundo**.
-   * A barra de luz respirará em tom azul indicando o número do jogador e depois assumirá o modo de jogo.
-
-### Alternando entre Modo Digital e Modo Analógico:
-* Basta apertar o botão **PS** no controle a qualquer momento:
-  * **Modo Analógico ATIVO:** A barra de luz acende em **Vermelho** (reproduzindo o LED físico do SCPH-1200) e os dois analógicos são ativados.
-  * **Modo Digital (Analógico DESLIGADO):** A barra de luz acende em **Branco/Cinza suave** e os analógicos são desligados (ideal para jogos 2D clássicos como *Crash Bandicoot 1*, *Ridge Racer*, etc.).
-
----
-
-## 📜 Licença e Agradecimentos
-
-* **BlueRetro:** Copyright (c) 2019-2025 Jacques Gagnon (Licença Apache-2.0 / CERN-OHL-P-2.0).
-* **Modificações & Customizações para PS1:** Desenvolvido e testado por **Schickacka**.
+* **BlueRetro:** Copyright (c) 2019-2025, Jacques Gagnon. Distribuído sob a licença **Apache-2.0**.
+* **Modificações para PlayStation 1 (Custom Edition):** Desenvolvido e mantido por **Schickacka**. Em conformidade com a seção 4(b) da licença Apache-2.0, todos os arquivos com alterações estruturais contêm notas e cabeçalhos de modificação.

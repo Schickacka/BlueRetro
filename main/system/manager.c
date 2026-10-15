@@ -273,6 +273,8 @@ static void update_onboard_led(uint32_t tick) {
     uint8_t p1_connected = 0;
     uint8_t total_connected = 0;
     uint8_t highest_player = 0;
+    static uint8_t cur_led_mode = 0xFF; /* 0 = pulse, 1 = static level */
+    static uint8_t cur_led_level = 0xFF;
 
     for (int32_t i = 0; i < BT_MAX_DEV; i++) {
         struct bt_dev *device = NULL;
@@ -291,45 +293,63 @@ static void update_onboard_led(uint32_t tick) {
 
     if (total_connected == 0) {
         if (bt_hci_get_inquiry()) {
-            port_led_pulse(led_list[0]);
+            if (cur_led_mode != 0) {
+                port_led_pulse(led_list[0]);
+                cur_led_mode = 0;
+            }
         }
         else {
-            set_port_led(0, 0);
+            if (cur_led_mode != 1 || cur_led_level != 0) {
+                set_port_led(0, 0);
+                cur_led_mode = 1;
+                cur_led_level = 0;
+            }
         }
         return;
     }
 
     if (p1_connected && total_connected == 1) {
-        set_port_led(0, 1);
+        if (cur_led_mode != 1 || cur_led_level != 1) {
+            set_port_led(0, 1);
+            cur_led_mode = 1;
+            cur_led_level = 1;
+        }
         return;
     }
 
-    uint32_t cycle = tick % 300; /* 3.0s cycle (300 * 10ms) */
+    uint8_t target_level = 1;
 
     if (p1_connected && total_connected > 1) {
         /* P1 + others: Solid ON with total_connected brief winks (100ms off) at start of cycle */
-        uint8_t is_wink = 0;
+        uint32_t cycle_len = (total_connected * 25) + 200; /* Dynamic cycle with 2.0s solid pause */
+        uint32_t cycle = tick % cycle_len;
         for (uint8_t w = 0; w < total_connected; w++) {
             uint32_t start = w * 25; /* 250ms per wink interval */
             if (cycle >= start && cycle < start + 10) { /* 100ms off */
-                is_wink = 1;
+                target_level = 0;
                 break;
             }
         }
-        set_port_led(0, is_wink ? 0 : 1);
     }
     else {
         /* P1 NOT connected, but other controllers connected:
          * Flashes ON highest_player times (250ms ON / 250ms OFF) at start of cycle */
-        uint8_t is_flash = 0;
+        target_level = 0;
+        uint32_t cycle_len = (highest_player * 50) + 150; /* Dynamic cycle with 1.5s pause */
+        uint32_t cycle = tick % cycle_len;
         for (uint8_t b = 0; b < highest_player; b++) {
             uint32_t start = b * 50; /* 500ms per flash cycle */
             if (cycle >= start && cycle < start + 25) { /* 250ms on */
-                is_flash = 1;
+                target_level = 1;
                 break;
             }
         }
-        set_port_led(0, is_flash ? 1 : 0);
+    }
+
+    if (cur_led_mode != 1 || cur_led_level != target_level) {
+        set_port_led(0, target_level);
+        cur_led_mode = 1;
+        cur_led_level = target_level;
     }
 }
 
@@ -860,5 +880,5 @@ void sys_mgr_init(uint32_t package) {
     }
 #endif /* CONFIG_BLUERETRO_HW2 */
 
-    xTaskCreatePinnedToCore(sys_mgr_task, "sys_mgr_task", 2048, NULL, 5, NULL, 0);
+    xTaskCreatePinnedToCore(sys_mgr_task, "sys_mgr_task", 3584, NULL, 5, NULL, 0);
 }
