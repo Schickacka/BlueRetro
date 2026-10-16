@@ -395,6 +395,9 @@ void ps_fb_to_generic(int32_t dev_mode, struct raw_fb *raw_fb_data, struct gener
     fb_data->wired_id = raw_fb_data->header.wired_id;
     fb_data->type = raw_fb_data->header.type;
 
+    /* Always stop pending watchdog timer when new feedback packet arrives */
+    adapter_fb_stop_timer_stop(raw_fb_data->header.wired_id);
+
     /* This stop rumble when BR timeout trigger */
     if (raw_fb_data->header.data_len == 0) {
         fb_data->state = 0;
@@ -403,17 +406,32 @@ void ps_fb_to_generic(int32_t dev_mode, struct raw_fb *raw_fb_data, struct gener
     else {
         switch (fb_data->type) {
             case FB_TYPE_RUMBLE:
-                fb_data->state = (raw_fb_data->data[0] || raw_fb_data->data[1] ? 1 : 0);
-                if (raw_fb_data->data[1]) {
-                    /* Scale [1..255] to [64..255] to overcome 3.7V wireless ERM motor stall threshold and match 7.6V PS1 punch */
-                    fb_data->lf_pwr = 64 + ((uint32_t)raw_fb_data->data[1] * 191) / 255;
+            {
+                /*
+                 * PS1 DualShock hardware specification (SCPH-1200):
+                 * 1. Small high-frequency motor (right): binary ON/OFF.
+                 *    Any non-zero byte (0x01 or 0xFF) engages full high-speed rotation.
+                 * 2. Large low-frequency motor (left): variable 8-bit speed (0x00 - 0xFF).
+                 *    Due to the heavy brass/iron eccentric weight on the 7.6V motor,
+                 *    hardware values below 0x40 (64) do NOT produce enough startup torque
+                 *    to spin the motor and are physically deadzoned (stationary). Games like
+                 *    Alien Resurrection output small residual baseline values (< 0x40) during
+                 *    gameplay; on authentic hardware, the motor remains completely still until
+                 *    active pulses exceed 0x40 (64).
+                 */
+                uint8_t hf = raw_fb_data->data[0] ? 0xFF : 0x00;
+                uint8_t lf = (raw_fb_data->data[1] >= 0x40) ? raw_fb_data->data[1] : 0x00;
+
+                fb_data->state = (hf || lf) ? 1 : 0;
+                fb_data->hf_pwr = hf;
+                fb_data->lf_pwr = lf;
+
+                if (fb_data->state) {
+                    /* Watchdog auto-stop: 500ms safety timeout in case SPI bus stalls */
+                    adapter_fb_stop_timer_start(raw_fb_data->header.wired_id, 500000);
                 }
-                else {
-                    fb_data->lf_pwr = 0;
-                }
-                /* PS1 games use 0xFF (or 0x01) to activate high-frequency right motor */
-                fb_data->hf_pwr = raw_fb_data->data[0] ? 0xFF : 0x00;
                 break;
+            }
             case FB_TYPE_STATUS_LED:
                 fb_data->led = raw_fb_data->data[0];
                 break;

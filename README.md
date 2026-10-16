@@ -1,18 +1,19 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.3)
+# BlueRetro — PlayStation 1 Custom Edition (v0.4)
 
 Firmware customizado de alta performance para receptor Bluetooth BlueRetro voltado ao PlayStation 1 (ESP32 DevKit). Desenvolvido por **Schickacka**, baseado no projeto de engenharia reversa e emulação sem fio de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)).
 
 ---
 
-## 1. Visão Geral das Modificações da Versão 0.3
+## 1. Visão Geral das Modificações da Versão 0.4
 
 Esta edição foi projetada para resolver limitações do BlueRetro clássico em instalações no PlayStation 1 (consoles PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41), com foco em controles **DualShock 4** e **DualSense (PS5)**:
 
-* **Calibração Háptica Fiel ao DualShock (Correção de Batimentos Cardíacos e Motores Assimétricos):**
-  * **Ativação Completa do Motor de Alta Frequência (Direito / Fraco):** O driver baremetal do PS1 foi corrigido para tratar qualquer valor não nulo (`0xFF`, `0x01` ou intermediário) como ativação do motor direito. Jogos clássicos como *Alien Resurrection*, *Silent Hill* e *Metal Gear Solid* utilizam `0xFF` para acionar o motor fraco; na implementação legada, a checagem restritiva `== 0x01` causava silenciamento total do motor direito.
-  * **Compensação de Curva de Torque para Motores a Bateria (7.6V ↔ 3.7V):** No PlayStation 1 original, o motor esquerdo (contrapeso pesado) é alimentado diretamente pelos 7.6V do console, produzindo impactos secos e vigorosos mesmo em pulsos PWM baixos. Em controles modernos (alimentados por bateria de 3.7V), comandos de baixa intensidade faziam o contrapeso apenas "raspar" ou girar lentamente sem inércia. Foi introduzida uma curva de compensação com piso de partida dinâmico (`64 + (val * 191) / 255`), restaurando o impacto tátil "tu-dum" de batimento cardíaco em *Alien Resurrection*.
-  * **Habilitação Explícita de Atuadores no DualSense:** No protocolo Bluetooth do DualSense (`Report 0x31`), a máscara de atuadores (`cmd |= 0x03`) agora é mantida ativa para assegurar que ambos os motores sejam disparados simultaneamente sem perdas.
-  * **Preservação de Mapeamento de Motores no Comando 0x44:** A transição para modo analógico (`0x44` com `req[1] == 0x01`) agora preserva e ativa os canais de rumble em vez de zerá-los, eliminando descompassos de configuração entre comandos `0x4D` e `0x44`.
+* **Fidelidade Eletromecânica ao DualShock 1 (SCPH-1200) e Correção do Rumble Infinito (*Alien Resurrection*):**
+  * **Deadzone Eletromecânica do Motor Pesado (`0x40` / 64):** No controle físico DualShock 1 original, o motor esquerdo (contrapeso pesado) exige no mínimo **`0x40` (64)** em comando PWM para superar a inércia estática e atrito do peso excêntrico de ferro sob 7.6V. Valores entre `0x01` e `0x3F` não possuem torque suficiente para girar o motor físico, permanecendo completamente imóveis. Jogos como *Alien Resurrection* emitem valores residuais baixos (`< 0x40`) como linha de base durante o gameplay. No BlueRetro clássico/v0.3, esses valores baixos eram repassados para atuadores modernos de 3.7V, fazendo o contrapeso girar indefinidamente. Na **v0.4**, comandos abaixo de `0x40` são tratados fielmente como repouso (`0x00`), permitindo que a simulação de batimento cardíaco ("tu-dum") em baixa saúde pulse com máxima força e cesse com silêncio cirúrgico entre as batidas.
+  * **Ativação Completa do Motor de Alta Frequência (Direito / Fraco):** O driver trata qualquer valor não nulo como pulso ativo do motor direito (`hf_pwr = 0xFF`), garantindo o impacto agudo síncrono.
+  * **Watchdog de Segurança Háptica (500 ms):** Temporizador automático (`adapter_fb_stop_timer`) que desliga os motores de vibração caso a comunicação SPI com o console congele, evitando drenagem de bateria ou vibração contínua em travamentos.
+  * **Corte Instantâneo de Vibração ao Entrar em Modo de Configuração / Pause (`0x43`):** Interrompe imediatamente qualquer vibração ativa ao pausar ou acessar menus.
+  * **Corte de Vibração no Reset do Console:** Em caso de reset do PS1, qualquer comando de vibração pendente é limpo imediatamente.
 * **Sincronização Atômica entre Núcleos (Core 1 ↔ Core 0):**
   * Campos de estado (`dev_id`, `pend_dev_id`, `rumble_*`, `analog_btn`, `last_spi_time`) declarados como `volatile` com barreiras `__sync_synchronize()`.
 * **Tratamento Robusto de Comandos SPI e Fallback Neutro:**
@@ -81,7 +82,7 @@ Se o seu BlueRetro já estiver instalado no PlayStation 1, você pode atualizar 
 
 * **Pelo Script Incluso no Pacote (Windows):**
   1. Ligue o PlayStation 1 com os controles desligados (o LED onboard respirará indicando espera).
-  2. Dê dois cliques em **`flash_bluetooth_ota.bat`** dentro do pacote [`BlueRetro_PS1_Custom_v0.3_Package.zip`](https://github.com/Schickacka/BlueRetro/releases).
+  2. Dê dois cliques em **`flash_bluetooth_ota.bat`** dentro do pacote [`BlueRetro_PS1_Custom_v0.4_Package.zip`](https://github.com/Schickacka/BlueRetro/releases).
   3. O script localiza o dispositivo via Bluetooth LE e grava o firmware em ~50 segundos com reboot automático.
 
 * **Pelo Navegador (Chrome / Edge):**
@@ -91,7 +92,7 @@ Se o seu BlueRetro já estiver instalado no PlayStation 1, você pode atualizar 
 
 ### 4.2. Pacote Automatizado para Windows (via Cabo USB)
 
-1. Baixe o pacote **`BlueRetro_PS1_Custom_v0.3_Package.zip`** na aba [Releases](https://github.com/Schickacka/BlueRetro/releases).
+1. Baixe o pacote **`BlueRetro_PS1_Custom_v0.4_Package.zip`** na aba [Releases](https://github.com/Schickacka/BlueRetro/releases).
 2. Extraia o conteúdo e conecte o ESP32 ao computador via cabo USB.
 3. Execute o arquivo **`flash_windows.bat`** e informe a porta serial (exemplo: `COM6`).
 

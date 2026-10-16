@@ -350,6 +350,16 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                 if (port->dev_id[id] != 0xF3) {
                     port->pend_dev_id[id] = port->dev_id[id];
                     port->dev_id[id] = 0xF3;
+                    /* Cut rumble immediately when entering configuration mode (pause / settings) */
+                    if (port->rumble_r_val[id] || port->rumble_l_val[id]) {
+                        struct raw_fb fb_data = {0};
+                        fb_data.header.wired_id = id + port->mt_first_port;
+                        fb_data.header.type = FB_TYPE_RUMBLE;
+                        fb_data.header.data_len = 0;
+                        adapter_q_fb(&fb_data);
+                        port->rumble_r_val[id] = 0;
+                        port->rumble_l_val[id] = 0;
+                    }
                 }
             }
             else {
@@ -1139,6 +1149,8 @@ void ps_spi_port_cfg(uint16_t mask) {
                     ps_ctrl_ports[i].rumble_l_state[j] = 1;
                     ps_ctrl_ports[i].rumble_r_idx[j] = 0;
                     ps_ctrl_ports[i].rumble_l_idx[j] = 1;
+                    ps_ctrl_ports[i].rumble_r_val[j] = 0;
+                    ps_ctrl_ports[i].rumble_l_val[j] = 0;
                 }
                 ps_ctrl_ports[i].last_spi_time = 0;
                 gpio_set_level_iram(ps_ctrl_ports[i].led_pin, 0);
@@ -1189,10 +1201,18 @@ void ps_spi_poll(void) {
                     port->dev_desc[j] = 0;
                     port->rumble_r_state[j] = 0;
                     port->rumble_l_state[j] = 0;
+                    port->rumble_r_val[j] = 0;
+                    port->rumble_l_val[j] = 0;
                     __sync_synchronize();
                     if (j == 0) {
                         gpio_set_level_iram(port->led_pin, 0);
                     }
+
+                    struct raw_fb stop_fb = {0};
+                    stop_fb.header.wired_id = port->id + (port->root_dev_type == DEV_PSX_MULTITAP ? j : 0);
+                    stop_fb.header.type = FB_TYPE_RUMBLE;
+                    stop_fb.header.data_len = 0;
+                    adapter_q_fb(&stop_fb);
 
                     fb_data.header.wired_id = port->id + (port->root_dev_type == DEV_PSX_MULTITAP ? j : 0);
                     fb_data.header.type = FB_TYPE_STATUS_LED;
