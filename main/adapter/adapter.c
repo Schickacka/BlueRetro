@@ -479,6 +479,18 @@ bool adapter_bridge_fb(struct raw_fb *fb_data, struct bt_data *bt_data) {
 
         if (bt_data->base.pids->type != BT_NONE) {
             ret = wireless_fb_from_generic(&fb_input, bt_data);
+            if (fb_input.type == FB_TYPE_RUMBLE) {
+                struct bt_dev *device = NULL;
+                bt_host_get_dev_from_id(bt_data->base.pids->id, &device);
+                if (device) {
+                    if (fb_input.state) {
+                        atomic_set_bit(&device->flags, BT_DEV_RUMBLE_ON);
+                    }
+                    else {
+                        atomic_clear_bit(&device->flags, BT_DEV_RUMBLE_ON);
+                    }
+                }
+            }
         }
     }
     return ret;
