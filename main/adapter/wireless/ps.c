@@ -276,12 +276,14 @@ static void ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
         0x1B, /* Player 4: * * . * * (4 LEDs) */
     };
 
+    set_conf->conf0 = 0x02;
     set_conf->valid_flag2 |= 0x14;
     set_conf->lightbar_setup = 0x02;
     set_conf->player_leds = ps5_player_led_mask[bt_data->base.pids->out_idx & 0x3];
 
     switch (fb_data->type) {
         case FB_TYPE_RUMBLE:
+            set_conf->cmd |= 0x03; /* Enable motor_right (bit 0) and motor_left (bit 1) */
             if (fb_data->state) {
                 set_conf->hf_motor_pwr = fb_data->hf_pwr;
                 set_conf->lf_motor_pwr = fb_data->lf_pwr;

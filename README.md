@@ -1,34 +1,32 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.2)
+# BlueRetro — PlayStation 1 Custom Edition (v0.3)
 
 Firmware customizado de alta performance para receptor Bluetooth BlueRetro voltado ao PlayStation 1 (ESP32 DevKit). Desenvolvido por **Schickacka**, baseado no projeto de engenharia reversa e emulação sem fio de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)).
 
 ---
 
-## 1. Visão Geral das Modificações da Versão 0.2
+## 1. Visão Geral das Modificações da Versão 0.3
 
 Esta edição foi projetada para resolver limitações do BlueRetro clássico em instalações no PlayStation 1 (consoles PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41), com foco em controles **DualShock 4** e **DualSense (PS5)**:
 
+* **Calibração Háptica Fiel ao DualShock (Correção de Batimentos Cardíacos e Motores Assimétricos):**
+  * **Ativação Completa do Motor de Alta Frequência (Direito / Fraco):** O driver baremetal do PS1 foi corrigido para tratar qualquer valor não nulo (`0xFF`, `0x01` ou intermediário) como ativação do motor direito. Jogos clássicos como *Alien Resurrection*, *Silent Hill* e *Metal Gear Solid* utilizam `0xFF` para acionar o motor fraco; na implementação legada, a checagem restritiva `== 0x01` causava silenciamento total do motor direito.
+  * **Compensação de Curva de Torque para Motores a Bateria (7.6V ↔ 3.7V):** No PlayStation 1 original, o motor esquerdo (contrapeso pesado) é alimentado diretamente pelos 7.6V do console, produzindo impactos secos e vigorosos mesmo em pulsos PWM baixos. Em controles modernos (alimentados por bateria de 3.7V), comandos de baixa intensidade faziam o contrapeso apenas "raspar" ou girar lentamente sem inércia. Foi introduzida uma curva de compensação com piso de partida dinâmico (`64 + (val * 191) / 255`), restaurando o impacto tátil "tu-dum" de batimento cardíaco em *Alien Resurrection*.
+  * **Habilitação Explícita de Atuadores no DualSense:** No protocolo Bluetooth do DualSense (`Report 0x31`), a máscara de atuadores (`cmd |= 0x03`) agora é mantida ativa para assegurar que ambos os motores sejam disparados simultaneamente sem perdas.
+  * **Preservação de Mapeamento de Motores no Comando 0x44:** A transição para modo analógico (`0x44` com `req[1] == 0x01`) agora preserva e ativa os canais de rumble em vez de zerá-los, eliminando descompassos de configuração entre comandos `0x4D` e `0x44`.
 * **Sincronização Atômica entre Núcleos (Core 1 ↔ Core 0):**
-  * Campos de estado (`dev_id`, `pend_dev_id`, `rumble_*`, `analog_btn`, `last_spi_time`) declarados como `volatile`.
-  * Barreiras de memória explícitas (`__sync_synchronize()`) em todas as transições de estado, garantindo coerência de cache e eliminando condições de corrida entre a ISR baremetal do Core 1 e as tarefas do Core 0.
+  * Campos de estado (`dev_id`, `pend_dev_id`, `rumble_*`, `analog_btn`, `last_spi_time`) declarados como `volatile` com barreiras `__sync_synchronize()`.
 * **Tratamento Robusto de Comandos SPI e Fallback Neutro:**
-  * Comandos desconhecidos ou não suportados pelo PlayStation não geram pulso falso de ACK (`DSR`), retornando nível neutro High-Z (`0xFF`) e prevenindo travamentos de protocolo no console.
-  * Proteção contra transbordamento de buffer (*boundary check*) em todas as montagens de resposta em `tx_buf`.
-* **Filtro de Ruído na Linha de Seleção (DTR / ATT):**
-  * Confirmação de amostragem em dois estágios para o pino de seleção (GPIO 34), prevenindo falsos disparos causados por acoplamento capacitivo das transições de clock (SCK).
+  * Comandos desconhecidos retornam nível neutro High-Z (`0xFF`) sem emitir ACK espúrio.
 * **Detecção Inteligente de Reset do Console (Caso *Resident Evil 3*):**
-  * Se o barramento SPI silenciar por mais de 3,0 segundos (`PS_IDLE_RESET_US`) — indicando que o console foi reiniciado fisicamente pelo botão RESET —, o adaptador reverte automaticamente para o modo Digital (`0x41`), apaga o LED analógico e reajusta o feedback do controle, prevenindo o bloqueio do jogo na tela de avisos.
+  * Limiar estendido para 3,0 segundos (`PS_IDLE_RESET_US`), evitando falsos disparos durante cutscenes em FMV e carregamentos de CD-ROM.
 * **Sincronização Imediata de LED na Conexão:**
-  * Se um controle Bluetooth for conectado enquanto o console já estiver rodando um jogo em modo Analógico (`0x73`), o controle assume imediatamente a cor vermelha (estilo SCPH-1200) ao término da animação de pareamento.
-* **Padrão de LED Onboard Otimizado (GPIO 2):**
-  * O ciclo de piscadas agora é dimensionado dinamicamente para comportar todos os jogadores conectados sem suprimir piscadas.
-  * O roteamento de matriz GPIO do LEDC é acionado exclusivamente na transição de estado, poupando ciclos de CPU da tarefa `sys_mgr_task`.
-* **Feedback Háptico na Conexão (Identificação por Jogador):**
-  * Ao parear, o controle vibra em pulsos curtos e ágeis de 500 ms com intervalos de 300 ms indicando o número da porta (1 pulso para Player 1, 2 pulsos para Player 2, etc.).
+  * O controle já acende diretamente em Vermelho se conectado com o jogo operando em analógico (`0x73`).
+* **Padrão de LED Onboard Dinâmico (GPIO 2):**
+  * Ciclos dimensionados para suportar topologias multitap completas com cache de estado nos registradores GPIO.
+* **Feedback Háptico na Conexão:**
+  * Pulso suave ao parear identificando a porta do jogador.
 * **Modo Noturno com Brilho a 50%:**
-  * Barra de luz calibrada para iluminação confortável em ambientes escuros:
-    * Analógico (SCPH-1200): Vermelho suave (`R=128`).
-    * Digital: Cinza/Branco ambiente (`RGB=16, 16, 16`).
+  * Barra de luz balanceada (Vermelho a 50% para Analógico, Cinza ambiente a 50% para Digital).
 
 ---
 
@@ -77,16 +75,28 @@ Esta edição foi projetada para resolver limitações do BlueRetro clássico em
 
 ## 4. Instalação e Gravação do Firmware
 
-### 4.1. Pacote Automatizado para Windows
+### 4.1. Atualização Sem Fio via Bluetooth (OTA - Recomendado)
 
-1. Baixe o pacote **`BlueRetro_PS1_Custom_v0.2_Package.zip`** disponível na aba [Releases](https://github.com/Schickacka/BlueRetro/releases).
-2. Extraia o conteúdo em uma pasta local.
-3. Conecte o ESP32 ao computador via cabo USB.
-4. Execute o arquivo **`flash_windows.bat`** e informe a porta serial identificada (exemplo: `COM6`).
+Se o seu BlueRetro já estiver instalado no PlayStation 1, você pode atualizar sem remover o console nem conectar cabos:
 
-### 4.2. Gravação Manual via Linha de Comando (esptool)
+* **Pelo Script Incluso no Pacote (Windows):**
+  1. Ligue o PlayStation 1 com os controles desligados (o LED onboard respirará indicando espera).
+  2. Dê dois cliques em **`flash_bluetooth_ota.bat`** dentro do pacote [`BlueRetro_PS1_Custom_v0.3_Package.zip`](https://github.com/Schickacka/BlueRetro/releases).
+  3. O script localiza o dispositivo via Bluetooth LE e grava o firmware em ~50 segundos com reboot automático.
 
-Caso prefira gravar manualmente via terminal:
+* **Pelo Navegador (Chrome / Edge):**
+  1. Acesse **[blueretro.io/ota.html](https://blueretro.io/ota.html)**.
+  2. Clique em **Connect**, selecione `BlueRetro_PSX` e escolha o arquivo `BlueRetro_hw1_playstation.bin`.
+  3. Clique em **Update** e aguarde a barra atingir 100%.
+
+### 4.2. Pacote Automatizado para Windows (via Cabo USB)
+
+1. Baixe o pacote **`BlueRetro_PS1_Custom_v0.3_Package.zip`** na aba [Releases](https://github.com/Schickacka/BlueRetro/releases).
+2. Extraia o conteúdo e conecte o ESP32 ao computador via cabo USB.
+3. Execute o arquivo **`flash_windows.bat`** e informe a porta serial (exemplo: `COM6`).
+
+### 4.3. Gravação Manual via Linha de Comando (esptool)
+
 ```bash
 python -m esptool --chip esp32 --port COMx -b 921600 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 bootloader.bin 0x8000 partition-table.bin 0xd000 ota_data_initial.bin 0x10000 BlueRetro_hw1_playstation.bin
 ```

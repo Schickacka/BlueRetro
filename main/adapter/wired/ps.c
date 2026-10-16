@@ -404,8 +404,15 @@ void ps_fb_to_generic(int32_t dev_mode, struct raw_fb *raw_fb_data, struct gener
         switch (fb_data->type) {
             case FB_TYPE_RUMBLE:
                 fb_data->state = (raw_fb_data->data[0] || raw_fb_data->data[1] ? 1 : 0);
-                fb_data->lf_pwr = raw_fb_data->data[1];
-                fb_data->hf_pwr = (raw_fb_data->data[0] == 0x01) ? 0xFF : 0x00;
+                if (raw_fb_data->data[1]) {
+                    /* Scale [1..255] to [64..255] to overcome 3.7V wireless ERM motor stall threshold and match 7.6V PS1 punch */
+                    fb_data->lf_pwr = 64 + ((uint32_t)raw_fb_data->data[1] * 191) / 255;
+                }
+                else {
+                    fb_data->lf_pwr = 0;
+                }
+                /* PS1 games use 0xFF (or 0x01) to activate high-frequency right motor */
+                fb_data->hf_pwr = raw_fb_data->data[0] ? 0xFF : 0x00;
                 break;
             case FB_TYPE_STATUS_LED:
                 fb_data->led = raw_fb_data->data[0];

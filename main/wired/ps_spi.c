@@ -334,9 +334,6 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                 if (port->rumble_l_state[id]) {
                     fb_data.data[1] = req[port->rumble_l_idx[id]];
                 }
-                if (!(port->rumble_l_state[id] && port->rumble_r_state[id]) && req[0] == 0x73) {
-                    fb_data.data[0] = req[1];
-                }
                 fb_data.header.wired_id = id + port->mt_first_port;
                 fb_data.header.type = FB_TYPE_RUMBLE;
                 fb_data.header.data_len = 2;
@@ -365,11 +362,11 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
         {
             if (port->dev_id[id] == 0xF3) {
                 struct raw_fb fb_data = {0};
-                port->rumble_r_state[id] = 0;
-                port->rumble_l_state[id] = 0;
                 if (req[1] == 0x01) {
                     port->pend_dev_id[id] = 0x73;
                     port->dev_desc[id] = 0x3FFFF;
+                    port->rumble_r_state[id] = 1;
+                    port->rumble_l_state[id] = 1;
                     if (id == 0) {
                         gpio_set_level_iram(ps_ctrl_ports[port->mt_first_port ? 1 : 0].led_pin, 1);
                     }
@@ -378,6 +375,8 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                 else {
                     port->pend_dev_id[id] = 0x41;
                     port->dev_desc[id] = 0;
+                    port->rumble_r_state[id] = 0;
+                    port->rumble_l_state[id] = 0;
                     if (id == 0) {
                         gpio_set_level_iram(ps_ctrl_ports[port->mt_first_port ? 1 : 0].led_pin, 0);
                     }
