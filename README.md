@@ -160,5 +160,5 @@ BR_HW=_hw1 BR_SYS=_playstation idf.py reconfigure build
 ## Licença e Créditos
 
 * **BlueRetro:** Copyright (c) 2019-2025, Jacques Gagnon. Distribuído sob a licença **Apache License 2.0**.
-* **PlayStation 1 Custom Edition:** Desenvolvido e mantido por **Pedro Afonso (Schickacka)**.
+* **PlayStation 1 Custom Edition:** Desenvolvido e mantido por **Schickacka**.
 * Todas as alterações de código e adições arquiteturais estão documentadas nos arquivos modificados em conformidade com a seção 4(b) da licença Apache 2.0.
