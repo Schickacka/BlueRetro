@@ -1,7 +1,7 @@
 # BlueRetro — PlayStation 1 Custom Edition (v0.4)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="320">
+  <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
 </p>
 
 <p align="center">
@@ -15,78 +15,66 @@
 
 ---
 
-## 📖 Visão Geral
+## Visão Geral
 
-O **BlueRetro — PlayStation 1 Custom Edition** é um firmware de alta fidelidade desenvolvido especificamente para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** instalados interna ou externamente no console **Sony PlayStation 1** (compatível com todas as placas-mãe: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
+O **BlueRetro — PlayStation 1 Custom Edition** é um firmware customizado de alta precisão para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** voltado ao console **Sony PlayStation 1** (compatível com todas as revisões de hardware: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
 
-Baseado no projeto de engenharia reversa e emulação de controladores sem fio de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição personalizada foi projetada e exaustivamente calibrada por **Schickacka** para sanar limitações eletromecânicas e comportamentais do firmware genérico quando pareado com controles modernos (**DualShock 4**, **DualSense (PS5)**, **Switch Pro**, **Xbox Wireless**, **8BitDo**).
+Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi projetada e mantida por **Pedro Afonso (Schickacka)** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200) e garantir estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
 
 ---
 
-## 🎯 Principais Destaques e Engenharia Reversa da v0.4
+## Arquitetura e Configurações da Versão 0.4
 
-### 1. Fidelidade Eletromecânica ao DualShock 1 (SCPH-1200) e Fim do Rumble Infinito (*Alien Resurrection*)
-* **O Problema Histórico:** No jogo *Alien Resurrection*, quando a personagem Ellen Ripley atinge nível crítico de saúde, os motores do controle vibram em cadência sincrônica imitando um batimento cardíaco (*"tu-dum"*). No BlueRetro clássico, enquanto o motor leve vibrava, o motor pesado de baixa frequência entrava em rotação contínua ininterrupta, arruinando a experiência.
-* **Causa Raiz Eletromecânica:** No controle físico original DualShock 1 (SCPH-1200), o motor esquerdo possui um contrapeso de ferro maciço acionado a 7.6V. Devido ao alto atrito estático e inércia do peso, comandos com valor PWM abaixo de **`0x40` (64 decimal)** não geram torque de partida suficiente para girar o motor físico, permanecendo completamente estático. O jogo *Alien Resurrection* envia comandos contínuos residuais de baixa amplitude (`< 0x40`) como ruído de fundo. Ao receber esses valores baixos, atuadores modernos de 3.7V giravam sem parar.
-* **A Solução:** Implementada uma **Deadzone Eletromecânica de `0x40` (64)** no driver `ps.c`:
+### 1. Deadzone Eletromecânica do Atuador de Baixa Frequência (0x40 / 64)
+* **Comportamento do Hardware Original:** No controle físico DualShock 1 (SCPH-1200), o motor esquerdo (baixa frequência) é composto por um contrapeso excêntrico de ferro maciço alimentado pela linha de 7.6V do console. Devido ao atrito estático e à inércia mecânica desse conjunto, comandos com sinal PWM inferior a `0x40` (64 em decimal) não produzem torque de partida suficiente para girar o motor físico, permanecendo completamente imóvel no hardware com fio original.
+* **Compatibilidade com Controles Modernos:** Jogos de PlayStation 1 frequentemente emitem valores residuais contínuos de baixa amplitude (`< 0x40`) nos registradores de feedback como ruído de fundo ou nível de linha de base. Em controladores sem fio modernos equipados com atuadores de 3.7V (que possuem limiar de partida muito baixo), esses valores residuais faziam o contrapeso girar de forma contínua em momentos nos quais o controle com fio original permanecia em repouso absoluto.
+* **Calibração Implementada:** Comandos de rotação do motor pesado com valores inferiores a `0x40` são tratados estritamente como repouso (`0x00`), acionando o motor apenas quando a intensidade exigida for igual ou superior a 64:
   $$\text{Power}_{\text{LF}} = \begin{cases} \text{raw}, & \text{se } \text{raw} \ge 0x40 \\ 0, & \text{se } \text{raw} < 0x40 \end{cases}$$
-* **Resultado:** O contrapeso pesado permanece em repouso absoluto durante os intervalos entre as batidas cardíacas e entra em ação apenas nos pulsos de impacto firme. O motor leve (direito) opera com saturação plena (`0xFF`), reproduzindo o batimento cardíaco com fidelidade idêntica à do hardware original.
+  Isso restaura a resposta tátil original do SCPH-1200 em toda a biblioteca do sistema, permitindo que efeitos modulados em pulso (como batimentos cardíacos, vibrações de advertência e passos) vibrem com impacto firme e cessem com silêncio cirúrgico entre as pulsações.
+* **Ativação do Motor de Alta Frequência:** O motor direito (leve/alta frequência) é tratado como sinal binário digital, no qual qualquer byte não nulo aciona saturação máxima (`0xFF`), garantindo resposta tátil nítida e imediata.
+
+### 2. Transmissão Contínua de Feedback em Alta Frequência (20 ms / 50 Hz)
+* **Temporizador Watchdog dos Controles Sem Fio:** Os controladores Bluetooth modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro) possuem um temporizador interno de segurança (*watchdog*) em seus firmwares de aproximadamente 200 ms a 250 ms. Se os motores estiverem ativos e nenhum novo relatório HID Bluetooth for recebido dentro dessa janela, o controle atenua ou desliga a alimentação dos atuadores por proteção térmica e conservação de bateria.
+* **Sustentação de Eventos Hápticos Prolongados:** Em situações de vibração contínua e constante (como disparos sustentados de armas automáticas, aceleração contínua em zebras de pista ou explosões de longa duração), o console mantém os mesmos valores nos registradores de comando quadro a quadro. Na ausência de variação nos dados, a rotina de feedback pausava a transmissão por 300 ms, gerando solavancos e microcortes cíclicos causados pelo desarmamento do watchdog interno do controle.
+* **Calibração Implementada:** A rotina de transmissão Bluetooth (`bt_fb_task`) monitora atomicamente o estado ativo de vibração (`BT_DEV_RUMBLE_ON`). Enquanto qualquer controle conectado estiver vibrando, os pacotes de feedback são retransmitidos a cada **20 ms (50 Hz)** — taxa rigorosamente síncrona com os quadros de vídeo do hardware do PlayStation 1. Isso mantém o watchdog do controle continuamente alimentado, garantindo uma resposta de vibração uniforme, sólida e sem interrupções durante toda a sustentação do comando.
+
+### 3. Interrupção Imediata de Vibração em Pausa e Menus (Comando 0x43)
+* Quando o jogo entra em pausa ou acessa telas de configuração/inventário, o console chaveia a comunicação serial para o comando `0x43`. O driver intercepta imediatamente essa transição e emite um pacote de parada forçada com comprimento zero (`data_len = 0`), desligando os motores de forma instantânea sem resíduos de rotação.
+
+### 4. Limiar Estendido de Inatividade do Barramento SPI (3,0 Segundos)
+* Durante transições de tela, telas de carregamento do CD-ROM ou reprodução de vídeos em tela cheia (FMV), determinados jogos suspendem temporariamente a comunicação com as portas de controle por mais de um segundo. O limiar de inatividade para reinicialização (`PS_IDLE_RESET_US`) foi estendido para **3,0 segundos**, prevenindo que pausas de leitura do disco desarmem o modo analógico, enquanto preserva a capacidade de detectar com precisão quando o console foi reiniciado pelo botão físico de Reset.
+
+### 5. Sincronização Imediata de Modo Analógico e Iluminação Balanceada
+* **Sincronização na Conexão:** Ao ligar o controle no meio de uma partida na qual o console já esteja operando em modo Analógico (`0x73`), o controle entra diretamente em Analógico e acende a barra de luz na cor correspondente, sem exigir reinicialização do console ou alternância manual.
+* **Iluminação Noturna a 50%:** A barra de luz RGB opera com luminosidade equilibrada a 50% para evitar ofuscamento em ambientes com baixa iluminação:
+  * **Modo Analógico Ativo:** Vermelho clássico do SCPH-1200 (`#800000`).
+  * **Modo Digital:** Branco suave / cinza ambiente (`#101010`).
+
+### 6. Sincronização Atômica entre Núcleos (Dual-Core)
+* O firmware distribui suas cargas entre os dois núcleos do ESP32: o **Core 1** é responsável pelo driver baremetal SPI em tempo real (`ps_spi.c`), enquanto o **Core 0** gerencia a pilha de protocolos Bluetooth e o sistema operacional FreeRTOS (`host.c`).
+* Todas as estruturas compartilhadas de barramento e estado (`dev_id`, `pend_dev_id`, `rumble_*`, `analog_btn`, `last_spi_time`) utilizam qualificadores `volatile`, operações atômicas da API Zephyr e barreiras explícitas de memória `__sync_synchronize()`, eliminando condições de corrida entre os núcleos.
 
 ---
 
-### 2. Vibração Contínua em Alta Frequência (20 ms / 50 Hz) (*Resident Evil 3: Nemesis*)
-* **O Problema:** Durante disparos sustentados de armas automáticas (como a metralhadora de Jill Valentine em *Resident Evil 3*), a vibração apresentava solavancos, microcortes e interrupções aleatórias, não mantendo um fluxo contínuo.
-* **Causa Raiz nos Controles Bluetooth:** Todo controle sem fio moderno (**DualShock 4**, **DualSense**, etc.) possui em sua MCU interna um temporizador de segurança (*watchdog*) de **~200 ms a 250 ms**. Se os motores estão acionados e nenhum novo pacote Bluetooth chega nesse intervalo, o controle desliga os motores para evitar superaquecimento e esgotamento da bateria caso a conexão caia. Como o jogo envia valores idênticos quadro a quadro durante a rajada de tiros, o BlueRetro original entrava em modo de repouso por 300 ms (`BT_FB_TASK_DELAY_CNT = 30`), disparando o watchdog interno do controle a cada ~200 ms.
-* **A Solução:** A tarefa de feedback Bluetooth (`bt_fb_task`) foi reprojetada com o flag atômico **`BT_DEV_RUMBLE_ON`**. Enquanto qualquer dispositivo conectado estiver com vibração ativa, o BlueRetro retransmite o relatório háptico a cada **20 ms (50 Hz)** — exatamente na cadência síncrona dos quadros de vídeo do PlayStation 1.
-* **Resultado:** Disparos contínuos de metralhadora agora mantêm uma vibração contínua, densa, homogênea e sem nenhuma microinterrupção enquanto o gatilho permanecer pressionado.
+## Esquema Elétrico e Pinagem (Hardware Pinout)
 
----
-
-### 3. Corte Instantâneo de Vibração em Pausa e Menus (`0x43`)
-* Ao pressionar Start para pausar o jogo ou entrar em inventários/telas de configuração, o console transmite o comando `0x43`.
-* O driver agora intercepta essa transição imediatamente e despacha um pacote de parada forçada com `data_len = 0`, zerando os motores sem atrasos ou resíduos de rotação.
-
----
-
-### 4. Tolerância Estendida a Cutscenes em FMV e Resets (3,0 Segundos)
-* Jogos como *Resident Evil 3* interrompem temporariamente a varredura do barramento SPI durante reprodução de vídeos em tela cheia (FMV) e carregamentos de salas no CD-ROM.
-* O limiar de reset ocioso do barramento (`PS_IDLE_RESET_US`) foi ajustado para **3,0 segundos**, impedindo que cutscenes desativem o modo analógico acidentalmente, mas garantindo que o controle retorne a Digital caso o console seja reiniciado pelo botão físico de Reset.
-
----
-
-### 5. Sincronização Instantânea de Modo Analógico e LED
-* **Sincronização na Conexão:** Ao ligar o controle no meio de um jogo que já esteja em modo Analógico (`0x73`), o controle entra imediatamente em Analógico e acende a barra de luz na cor correta sem exigir reinício do console.
-* **Modo Noturno (50% de Brilho):** Para não ofuscar o jogador em ambientes escuros:
-  * **Modo Analógico Ativo:** Barra de luz em **Vermelho** (homenagem à clássica lâmpada LED do DualShock SCPH-1200) com 50% de luminosidade (`#800000`).
-  * **Modo Digital:** Barra de luz em **Cinza Suave / Branco Quente** a 50% (`#101010`).
-
----
-
-### 6. Arquitetura Dual-Core e Sincronização Atômica
-* O ESP32 opera com dois núcleos de processamento: **Core 1** dedicado ao driver baremetal SPI em tempo real (`ps_spi.c`) e **Core 0** dedicado à pilha de rádio Bluetooth (`bt_host.c`).
-* Todas as variáveis compartilhadas de estado (`dev_id`, `pend_dev_id`, `rumble_r_val`, `rumble_l_val`, `analog_btn`, `last_spi_time`) utilizam qualificadores `volatile`, operações atômicas da API Zephyr e barreiras de memória de hardware `__sync_synchronize()`, garantindo consistência total livre de condições de corrida (*race conditions*).
-
----
-
-## 🔌 Esquema Elétrico e Pinagem (Hardware Pinout)
-
-O driver baremetal utiliza temporizadores e interrupções GPIO de alta velocidade. Para instalações com duas portas simultâneas (Porta 1 e Porta 2), cada porta possui pinagem dedicada:
+O driver baremetal utiliza temporizadores e interrupções GPIO de hardware dedicadas para garantir operação concorrente em instalações com duas portas:
 
 ```text
                [ 9   7   6 ]   [ 5   4   3 ]   [ 2   1 ]  (Porta Frontal do PS1)
                -----------------------------------------
 ```
 
-| Pino PS1 | Linha de Sinal | Direção (Console) | Conexão ESP32 (Porta 1) | Conexão ESP32 (Porta 2) | Observações Elétricas |
+| Pino PS1 | Sinal | Direção (Console) | Conexão ESP32 (Porta 1) | Conexão ESP32 (Porta 2) | Observações Elétricas |
 | :---: | :---: | :---: | :---: | :---: | :--- |
 | **1** | **DATA** | Entrada | **GPIO 19** | **GPIO 22** | Linha serial de dados (Open-Drain, pull-up 3.5V no console) |
 | **2** | **CMND** | Saída | **GPIO 32** | **GPIO 27** | Linha de comando serial emitida pelo console |
-| **3** | **7.6V** | Saída | *Não conectar* | *Não conectar* | Tensão dos motores originais do DualShock |
-| **4** | **GND** | Referência | **GND** | **GND** | Referência de terra comum (0V) |
+| **3** | **7.6V** | Saída | *Não conectar* | *Não conectar* | Tensão exclusiva dos motores originais do DualShock |
+| **4** | **GND** | Referência | **GND** | **GND** | Terra comum de referência (0V) |
 | **5** | **3.5V** | Saída | **3.3V** | **3.3V** | Alimentação lógica (ligar no pino **3.3V**; nunca no VIN) |
-| **6** | **ATT (SEL)** | Saída | **GPIO 34** | **GPIO 5** | Seleção de porta (nível baixo ativo) |
+| **6** | **ATT (SEL)** | Saída | **GPIO 34** | **GPIO 5** | Seleção de porta (ativo em nível baixo) |
 | **7** | **CLK** | Saída | **GPIO 33** | **GPIO 26** | Sinal de clock serial SPI (~250 kHz) |
-| **9** | **ACK** | Entrada | **GPIO 21** | **GPIO 25** | Pulso de confirmação de recepção de byte |
+| **9** | **ACK** | Entrada | **GPIO 21** | **GPIO 25** | Confirmação de recepção de byte |
 
 ### LEDs Opcionais de Modo Analógico
 
@@ -94,86 +82,83 @@ O driver baremetal utiliza temporizadores e interrupções GPIO de alta velocida
 | :--- | :---: | :--- |
 | **LED Analógico Porta 1** | **GPIO 12** | Nível alto (3.3V) quando a Porta 1 opera em Modo Analógico |
 | **LED Analógico Porta 2** | **GPIO 15** | Nível alto (3.3V) quando a Porta 2 opera em Modo Analógico |
-| **LED Onboard (Status BT)**| **GPIO 2** | LED azul embutido da placa DevKit (pisca ao aguardar pareamento) |
+| **LED Onboard (Status BT)**| **GPIO 2** | LED azul integrado da placa (indica aguardo de conexão / atividade) |
 
 ---
 
-## ⚡ Recomendações Críticas de Alimentação
+## Diretrizes de Alimentação
 
-1. **Alimentação Direta pela Linha de 3.5V (Pino 5):**
-   * Deve ser conectada diretamente ao pino **`3.3V`** do ESP32.
-   * ⚠️ **NUNCA ligue a linha de 3.5V ao pino `VIN` / `5V` do ESP32**: O pino VIN passa pelo regulador linear LDO onboard (ex.: AMS1117-3.3), cuja queda de tensão (*dropout*) exige pelo menos 4.5V a 5.0V na entrada. Ligar 3.5V no VIN fará o microcontrolador sofrer reinicializações espontâneas por subtensão (*brownout reset*).
-2. **Alimentação via Regulador Step-Down (Ideal para Máxima Estabilidade):**
-   * Conecte um mini módulo Buck DC-DC (ex.: MP1584EN) no **Pino 3 (7.6V)** do conector do console.
-   * Ajuste o potenciômetro para fornecer **5.0V regulados** e conecte a saída ao pino **`VIN` (5V)** do ESP32.
+1. **Alimentação Direta pela Linha de 3.5V (Pino 5 do Console):**
+   * Deve ser conectada diretamente ao pino **`3.3V`** da placa ESP32.
+   * **Importante:** Não conecte a linha de 3.5V ao pino `VIN` / `5V` do ESP32. O pino VIN passa por um regulador linear LDO (como o AMS1117-3.3), cuja queda de tensão interna (*dropout*) exige no mínimo 4.5V a 5.0V na entrada. A alimentação de 3.5V no VIN causa reinicializações espontâneas por subtensão (*brownout reset*).
+2. **Alimentação via Conversor Step-Down DC-DC:**
+   * Alternativamente, conecte um mini módulo regulador Buck DC-DC (ex.: MP1584EN) ao **Pino 3 (7.6V)** do conector do console.
+   * Ajuste o conversor para fornecer **5.0V regulados** e conecte a saída ao pino **`VIN` (5V)** da placa ESP32.
 
 ---
 
-## 🚀 Como Atualizar / Gravar o Firmware
+## Instalação e Atualização do Firmware
 
-### Opção 1: Atualização Sem Fio via Bluetooth (OTA - Recomendado)
-Se o BlueRetro já estiver instalado dentro do PlayStation 1, você não precisa abrir o videogame nem plugar cabos:
+### Método 1: Atualização Sem Fio via Bluetooth (OTA - Recomendado)
+Se o BlueRetro já estiver instalado no console, o procedimento pode ser realizado sem abrir o videogame e sem cabos:
 
 1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.4_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
-2. Ligue o PlayStation 1 com os controles desligados.
-3. Dê dois cliques no arquivo **`flash_bluetooth_ota.bat`**.
-4. O script localiza o BlueRetro via Bluetooth LE e grava o firmware em aproximadamente 50 segundos. O BlueRetro reinicia automaticamente já atualizado.
+2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
+3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
+4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
 
-*Alternativa via Navegador:* Acesse **[blueretro.io/ota.html](https://blueretro.io/ota.html)** no Chrome ou Edge, clique em **Connect**, selecione seu receptor e envie o arquivo `BlueRetro_hw1_playstation.bin`.
+*Alternativa via Navegador:* Acesse **[blueretro.io/ota.html](https://blueretro.io/ota.html)** no Chrome ou Edge, conecte-se ao BlueRetro e envie o arquivo `BlueRetro_hw1_playstation.bin`.
 
-### Opção 2: Gravação via Cabo USB (Windows)
-1. Conecte o ESP32 ao computador via cabo USB.
-2. Extraia o pacote **`BlueRetro_PS1_Custom_v0.4_Package.zip`**.
-3. Execute o arquivo **`flash_windows.bat`** e informe a porta serial (exemplo: `COM3`, `COM4`, `COM6`).
+### Método 2: Gravação via Cabo USB (Windows)
+1. Conecte o ESP32 ao computador via cabo micro-USB.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.4_Package.zip`**.
+3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
-### Opção 3: Linha de Comando Manual (esptool)
+### Método 3: Gravação Manual via Linha de Comando (esptool)
 ```bash
 python -m esptool --chip esp32 --port COMx -b 921600 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 bootloader.bin 0x8000 partition-table.bin 0xd000 ota_data_initial.bin 0x10000 BlueRetro_hw1_playstation.bin
 ```
 
 ---
 
-## 🎮 Matriz de Jogos e Controles Validados
+## Compatibilidade de Hardware e Controles
 
-| Jogo | Teste Realizado | Resultado com a v0.4 |
-| :--- | :--- | :---: |
-| **Alien Resurrection** | Batimento cardíaco com baixa saúde (*Ellen Ripley*) | ✅ **Perfeito** (Motor forte silencioso no repouso; motor fraco vibrando forte no *"tu-dum"*) |
-| **Resident Evil 3: Nemesis** | Disparo sustentado de Metralhadora / Gatling Gun | ✅ **Perfeito** (Vibração contínua a 50 Hz sem cortes ou solavancos) |
-| **Resident Evil 3: Nemesis** | Reprodução de FMVs e transições de tela | ✅ **Perfeito** (Sem perda de estado analógico durante pausas de SPI) |
-| **Gran Turismo 2** | Aceleração contínua e zebras de pista | ✅ **Perfeito** (Resposta gradual precisa em ambas as portas) |
-| **Silent Hill** | Rádio chiando e batimentos de monstros | ✅ **Perfeito** (Sincronia precisa de pulso háptico) |
-| **Metal Gear Solid** | Sessão de tortura e disparos de FAMAS | ✅ **Perfeito** (Alta intensidade contínua sem desarmes) |
-| **Tekken 3** | Golpes fortes e especiais de impacto | ✅ **Perfeito** (Impacto agudo instantâneo) |
-
-### Controles Sem Fio Homologados
-* **Sony DualShock 4** (todas as revisões: CUH-ZCT1 e CUH-ZCT2).
-* **Sony DualSense (PS5)** (atuadores hápticos mapeados para rotação de baixa e alta frequência).
+### Controles Homologados
+* **Sony DualShock 4** (todas as revisões de hardware: CUH-ZCT1 e CUH-ZCT2).
+* **Sony DualSense (PS5)** (atuadores de precisão mapeados para baixa e alta frequência).
 * **Nintendo Switch Pro Controller** e Joy-Cons.
-* **Xbox Wireless Controller** (Modelos 1708, Series X/S 1914).
-* **8BitDo** (Pro 2, Ultimate Bluetooth, SN30 Pro, M30).
+* **Xbox Wireless Controller** (Modelos 1708 com Bluetooth, Series X/S 1914).
+* **Linha 8BitDo** (Pro 2, Ultimate Bluetooth, SN30 Pro, M30).
+
+### Comportamento Validado em Jogos
+A calibração do firmware abrange os padrões de comunicação e feedback utilizados pela biblioteca do PlayStation:
+* **Efeitos de Pulso e Modulação:** Resposta de motores pesados com repouso verdadeiro nos intervalos de baixa intensidade (como batimentos cardíacos, avisos de proximidade e alertas de status).
+* **Vibração Sustentada Contínua:** Disparos prolongados de armas automáticas, aceleração contínua e superfícies acidentadas sem interrupções por watchdog.
+* **Transições de Cena e Vídeos:** Preservação do modo analógico durante pausas de leitura em FMVs e telas de transição.
+* **Resposta de Impacto:** Acionamento agudo em golpes, impactos rápidos e colisões.
 
 ---
 
-## 🛠️ Compilação a Partir do Código-Fonte
+## Compilação a Partir do Código-Fonte
 
-Este repositório possui integração contínua (CI) com **GitHub Actions** que gera os binários automaticamente a cada commit. Caso queira compilar localmente com o **ESP-IDF v5.5**:
+Este repositório possui fluxo automatizado de integração contínua (CI) via **GitHub Actions** que gera os binários a cada commit na branch `master`. Para compilação local utilizando o framework **ESP-IDF v5.5**:
 
 ```bash
-# Clonar com todos os submódulos (obrigatório)
+# Clonagem recursiva obrigatória para obtenção de submódulos
 git clone --recursive https://github.com/Schickacka/BlueRetro.git
 cd BlueRetro
 
-# Carregar configuração do hardware PlayStation
+# Carregar arquivo de configuração para PlayStation
 cp configs/hw1/playstation sdkconfig
 
-# Compilar
+# Compilar binários
 BR_HW=_hw1 BR_SYS=_playstation idf.py reconfigure build
 ```
 
 ---
 
-## 📜 Licença e Créditos
+## Licença e Créditos
 
-* **BlueRetro:** Copyright © 2019–2025 Jacques Gagnon. Distribuído sob a licença **Apache License 2.0**.
-* **PlayStation 1 Custom Edition:** Desenvolvido, testado e mantido por **Pedro Afonso (Schickacka)**.
-* Todas as alterações de código estão devidamente documentadas nos cabeçalhos e arquivos modificados em conformidade com os termos da licença Apache 2.0.
+* **BlueRetro:** Copyright (c) 2019-2025, Jacques Gagnon. Distribuído sob a licença **Apache License 2.0**.
+* **PlayStation 1 Custom Edition:** Desenvolvido e mantido por **Pedro Afonso (Schickacka)**.
+* Todas as alterações de código e adições arquiteturais estão documentadas nos arquivos modificados em conformidade com a seção 4(b) da licença Apache 2.0.
