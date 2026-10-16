@@ -395,9 +395,6 @@ void ps_fb_to_generic(int32_t dev_mode, struct raw_fb *raw_fb_data, struct gener
     fb_data->wired_id = raw_fb_data->header.wired_id;
     fb_data->type = raw_fb_data->header.type;
 
-    /* Always stop pending watchdog timer when new feedback packet arrives */
-    adapter_fb_stop_timer_stop(raw_fb_data->header.wired_id);
-
     /* This stop rumble when BR timeout trigger */
     if (raw_fb_data->header.data_len == 0) {
         fb_data->state = 0;
@@ -425,11 +422,6 @@ void ps_fb_to_generic(int32_t dev_mode, struct raw_fb *raw_fb_data, struct gener
                 fb_data->state = (hf || lf) ? 1 : 0;
                 fb_data->hf_pwr = hf;
                 fb_data->lf_pwr = lf;
-
-                if (fb_data->state) {
-                    /* Watchdog auto-stop: 500ms safety timeout in case SPI bus stalls */
-                    adapter_fb_stop_timer_start(raw_fb_data->header.wired_id, 500000);
-                }
                 break;
             }
             case FB_TYPE_STATUS_LED:
