@@ -417,16 +417,8 @@ void ps_fb_to_generic(int32_t dev_mode, struct raw_fb *raw_fb_data, struct gener
                  *    gameplay; on authentic hardware, the motor remains completely still until
                  *    active pulses exceed 0x40 (64).
                  */
-                uint8_t hf = raw_fb_data->data[0] ? 0xFF : 0x00;
+                uint8_t hf = (raw_fb_data->data[0] & 0x01) ? 0xFF : 0x00;
                 uint8_t lf = (raw_fb_data->data[1] >= 0x40) ? raw_fb_data->data[1] : 0x00;
-
-                /* When the small motor is triggered (e.g. heartbeat "tu"), provide a crisp,
-                 * gentle assist on the low-frequency motor (~33%) so quick pulses have real
-                 * tactile punch even on clone/battery controllers, while maintaining total
-                 * silence at rest (< 0x40 deadzone). */
-                if (hf && lf < 0x55) {
-                    lf = 0x55;
-                }
 
                 fb_data->state = (hf || lf) ? 1 : 0;
                 fb_data->hf_pwr = hf;

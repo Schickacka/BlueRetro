@@ -406,6 +406,11 @@ static void ps_start_player_rumble(struct bt_dev *device) {
         return;
     }
 
+    /* Only vibrate if user config enabled rumble */
+    if (!(config.out_cfg[device->ids.out_idx].acc_mode & ACC_RUMBLE)) {
+        return;
+    }
+
     struct ps_conn_rumble_ctx *ctx = &ps_conn_rumble_ctxs[dev_id];
     if (ctx->timer) {
         return;
@@ -417,13 +422,13 @@ static void ps_start_player_rumble(struct bt_dev *device) {
     if (device->ids.subtype == BT_PS5_DS) {
         struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
         set_conf->hf_motor_pwr = 0xFF;
-        set_conf->lf_motor_pwr = 0x80;
+        set_conf->lf_motor_pwr = 0x00;
         bt_hid_cmd_ps5_set_conf(device, (void *)set_conf);
     }
     else {
         struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
         set_conf->hf_motor_pwr = 0xFF;
-        set_conf->lf_motor_pwr = 0x80;
+        set_conf->lf_motor_pwr = 0x00;
         bt_hid_cmd_ps4_set_conf(device, (void *)set_conf);
     }
 
@@ -434,7 +439,7 @@ static void ps_start_player_rumble(struct bt_dev *device) {
     };
 
     if (esp_timer_create(&rumble_timer_args, &ctx->timer) == ESP_OK) {
-        esp_timer_start_once(ctx->timer, 180000); /* Crisp 180ms confirmation pulse */
+        esp_timer_start_once(ctx->timer, 150000); /* Crisp 150ms confirmation pulse */
     }
 }
 
