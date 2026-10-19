@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.5)
+# BlueRetro — PlayStation 1 Custom Edition (v0.5.1)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -23,19 +23,26 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 
 ---
 
+## Novidades e Correções da Versão 0.5.1
+
+* **Estabilidade do Modo Analógico na Porta 2:** Correção do algoritmo de detecção de Reset do console em `ps_spi_poll()`. Anteriormente, a verificação de inatividade (`PS_IDLE_RESET_US = 3.0s`) avaliava as portas de forma isolada; como grande parte dos jogos de PS1 não envia quadros contínuos para a Porta 2 durante o modo single-player ou telas de menu, a Porta 2 sofria timeout prematuro e desativava o modo analógico espontaneamente a cada 3 segundos. O monitoramento agora valida a atividade global do barramento: se a Porta 1 estiver comunicando ativamente com o console (jogo em execução), a Porta 2 permanece continuamente em modo analógico com o LED vermelho aceso. A reversão para digital ocorre estritamente quando todo o barramento do console silenciar de forma simultânea (indicando acionamento físico do botão Reset no videogame).
+* **Vibração de Conexão no Controle 2 e Demais Portas:** Remoção da trava indevida que condicionava a vibração de pareamento Bluetooth à flag `acc_mode & ACC_RUMBLE`. O pulso de confirmação háptica de pareamento (150 ms no atuador leve, sem acionar o motor pesado) agora dispara normalmente para qualquer controle que conectar (Controle 1, Controle 2, etc.), independente do estado de configuração de acessórios na partição NVS.
+* **Atenuação Visual do LED Analógico (Redução de 15%):** Ajuste fino da intensidade da barra de luz em modo analógico (SCPH-1200) de `128` (`0x80`) para `109` (`0x6D`) nos controladores DualShock 4 e DualSense, mantendo o visual clássico sem ofuscar o jogador em ambientes escuros.
+* **Preservação Eletromecânica Fiel:** Manutenção do comportamento háptico autêntico do DualShock 1 no motor de baixa frequência (`0x40` deadzone) e no motor leve (`0xFF` em saturação máxima), garantindo que apenas os atuadores solicitados pelo jogo vibrem, sem acionamento conjunto indevido do motor pesado.
+
+---
+
 ## Melhorias Arquiteturais e Correções Técnicas (v0.5)
 
 * **Eliminação de Condições de Corrida na Fila de Feedback (`queue_bss`):** A fila `queue_bss` (liblfds711) opera como buffer circular lock-free de produtor único e consumidor único. Para garantir integridade quando múltiplos contextos concorrentes em núcleos distintos (ISR bare-metal no Core 1 e tarefas FreeRTOS no Core 0) emitem eventos de feedback, a rotina `adapter_q_fb()` foi protegida por spinlock atômico (`fb_queue_lock`), serializando as inserções e eliminando o risco de corrupção de ponteiros.
 * **Leitura de Ciclos de Hardware (CCOUNT) no Driver Baremetal:** Substituição da chamada `esp_timer_get_time()` dentro da interrupção bare-metal do Core 1 pelo registrador de ciclos de instrução do processador (`xthal_get_ccount()`). A leitura e o armazenamento do tempo em 32 bits eliminam a sobrecarga de chamadas ao sistema operacional em contexto de interrupção e impedem a divisão de palavras de 64 bits (*word tearing*) em barramento Xtensa de 32 bits.
-* **Isolamento de Estado do Botão Analógico:** A alternância de modo via botão PS/Home em `ps_analog_btn_hdlr()` foi protegida por trava atômica (`ps_analog_busy`) e o laço de varredura `ps_spi_poll()` agora atua apenas quando o barramento SPI do console está inativo (durante o reset ou inicialização), deixando o tratamento exclusivo para a ISR quando o console estiver em comunicação ativa.
+* **Isolamento de Estado do Botão Analógico:** A alternância de modo via botão PS/Home em `ps_analog_btn_hdlr()` foi protegida por trava atômica (`ps_analog_busy`), prevenindo colisões de estado entre o laço de varredura `ps_spi_poll()` e a ISR `packet_end()`.
 * **Restauração do Suporte a Memory Card Virtual (`ACC_MEM`):** Remoção da sobrescrita estática que forçava `acc_mode = ACC_RUMBLE` em `ps_spi_init()`, restabelecendo o respeito às opções configuradas pelo usuário na memória não volátil e permitindo o funcionamento pleno do Memory Card Virtual.
 * **Serialização de Transmissão Bluetooth (`bt_hci_pkt_tmp`):** Implementação de mutex recursivo (`bt_tx_mutex`) para acesso ao buffer global `bt_hci_pkt_tmp`. Evita que rotinas de temporização e a tarefa periódica `bt_fb_task` colidam durante a montagem do cabeçalho L2CAP/HCI ou cálculo de CRC32, eliminando descartes de pacotes por checksum corrompido nos controles DualShock 4 e DualSense.
 * **Proteção Atômica contra Deleção Dupla de Temporizadores:** Uso de troca atômica com barreira de memória (`__atomic_exchange_n`) em `ps4_blink_stop()`, `ps4_blink_timer_cb()` e `ps_conn_rumble_timer_cb()`, garantindo que temporizadores FreeRTOS sejam desarmados e destruídos de forma estritamente única, prevenindo falhas de *use-after-free* em desconexões simultâneas.
-* **Pulso de Conexão Discreto e Respeito a `acc_mode`:** A confirmação háptica de pareamento agora verifica a habilitação de vibração na porta (`acc_mode & ACC_RUMBLE`) e emite um pulso único e suave de 150 ms no atuador leve, eliminando vibrações longas e indesejadas na bancada.
 * **Mapeamento Preciso de Status em Multitap (Jogadores 3 e 4):** A função `ps_spi_is_analog()` foi reescrita para considerar a topologia de portas e slots configurada (Multitap na Porta 1, Porta 2 ou Dual), permitindo que controles conectados aos slots subsequentes exibam corretamente as cores do LED de modo.
 * **Preservação de Rumble em Controles 8BitDo (Modo Switch):** O registrador interno de tipo de pacote (`output[127]`) agora é preservado durante eventos de LED de status, e o despachante de comandos verifica ativamente a flag `BT_DEV_RUMBLE_ON`, impedindo que relatórios de iluminação façam o controle 8BitDo chavear indevidamente para `SET_CONF` e cessar a vibração.
 * **Prevenção de Saturação no Canal de Controle para Clones de DS4:** Remoção de pacotes `SET_REPORT` redundantes no canal de controle Bluetooth em transmissões periódicas a 50 Hz, mantendo o tráfego estritamente no canal de interrupção e prevenindo bloqueios por confirmação pendente (*handshake*).
-* **Fidelidade Eletromecânica do Atuador Leve (Bit 0):** O motor de alta frequência passa a testar o bit 0 do comando (`data[0] & 0x01`) em conformidade com as especificações do protocolo Sony, aceitando tanto acionamentos com `0x01` quanto `0xFF`.
 
 ---
 
@@ -62,40 +69,34 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 
 ### 5. Sincronização Imediata de Modo Analógico e Iluminação Balanceada
 * **Sincronização na Conexão:** Ao ligar o controle no meio de uma partida na qual o console já esteja operando em modo Analógico (`0x73`), o controle entra diretamente em Analógico e acende a barra de luz na cor correspondente, sem exigir reinicialização do console ou alternância manual.
-* **Iluminação Noturna a 50%:** A barra de luz RGB opera com luminosidade equilibrada a 50% para evitar ofuscamento em ambientes com baixa iluminação:
-  * **Modo Analógico Ativo:** Vermelho clássico do SCPH-1200 com brilho calibrado (`#6D0000`).
+* **Iluminação Noturna a 50%:** A barra de luz RGB opera com luminosidade equilibrada para evitar ofuscamento em ambientes com baixa iluminação:
+  * **Modo Analógico Ativo:** Vermelho clássico do SCPH-1200 calibrado com atenuação de 15% (`#6D0000`).
   * **Modo Digital:** Branco suave / cinza ambiente (`#101010`).
 
 ### 6. Sincronização Atômica entre Núcleos (Dual-Core)
 * O firmware distribui suas cargas entre os dois núcleos do ESP32: o **Core 1** é responsável pelo driver baremetal SPI em tempo real (`ps_spi.c`), enquanto o **Core 0** gerencia a pilha de protocolos Bluetooth e o sistema operacional FreeRTOS (`host.c`).
-* Todas as estruturas compartilhadas de barramento e estado (`dev_id`, `pend_dev_id`, `rumble_*`, `analog_btn`, `last_spi_ccount`, `spi_active`) utilizam qualificadores `volatile`, operações atômicas da API Zephyr e barreiras explícitas de memória `__sync_synchronize()`, eliminando condições de corrida entre os núcleos.
+* Todas as variáveis compartilhadas entre a ISR baremetal e as tarefas de background são declaradas como `volatile` e protegidas com barreiras explícitas de sincronização de memória (`__sync_synchronize()`), assegurando que as transições de estado do controle sejam visíveis de imediato em ambos os núcleos.
 
 ---
 
-## Esquema Elétrico e Pinagem (Hardware Pinout)
+## Mapeamento de Pinos (Pinout)
 
-O driver baremetal utiliza temporizadores e interrupções GPIO de hardware dedicadas para garantir operação concorrente em instalações com duas portas:
+Configuração padrão dos pinos de conexão entre a placa **ESP32 DevKit V1** e as portas do console:
 
-```text
-               [ 9   7   6 ]   [ 5   4   3 ]   [ 2   1 ]  (Porta Frontal do PS1)
-               -----------------------------------------
-```
-
-| Pino PS1 | Sinal | Direção (Console) | Conexão ESP32 (Porta 1) | Conexão ESP32 (Porta 2) | Observações Elétricas |
-| :---: | :---: | :---: | :---: | :---: | :--- |
-| **1** | **DATA** | Entrada | **GPIO 19** | **GPIO 22** | Linha serial de dados (Open-Drain, pull-up 3.5V no console) |
-| **2** | **CMND** | Saída | **GPIO 32** | **GPIO 27** | Linha de comando serial emitida pelo console |
-| **3** | **7.6V** | Saída | *Não conectar* | *Não conectar* | Tensão exclusiva dos motores originais do DualShock |
-| **4** | **GND** | Referência | **GND** | **GND** | Terra comum de referência (0V) |
-| **5** | **3.5V** | Saída | **3.3V** | **3.3V** | Alimentação lógica (ligar no pino **3.3V**; nunca no VIN) |
-| **6** | **ATT (SEL)** | Saída | **GPIO 34** | **GPIO 5** | Seleção de porta (ativo em nível baixo) |
-| **7** | **CLK** | Saída | **GPIO 33** | **GPIO 26** | Sinal de clock serial SPI (~250 kHz) |
-| **9** | **ACK** | Entrada | **GPIO 21** | **GPIO 25** | Confirmação de recepção de byte |
-
-### LEDs Opcionais de Modo Analógico
-
-| Sinal | Conexão ESP32 | Descrição |
-| :--- | :---: | :--- |
+| Sinal PlayStation | Pino do Console | GPIO ESP32 | Descrição e Observações |
+| :--- | :---: | :---: | :--- |
+| **P1 DATA (MISO)** | **Pino 1** | **GPIO 19** | Dados seriais enviados do controle para o console (Porta 1) |
+| **P1 COMMAND (MOSI)**| **Pino 2** | **GPIO 23** | Comandos enviados do console para o controle (Porta 1) |
+| **P1 ATT / DTR**   | **Pino 6** | **GPIO 34** | Linha de seleção da Porta 1 (requer resistor pull-up externo de 10k) |
+| **P1 CLOCK (SCK)** | **Pino 7** | **GPIO 18** | Linha de clock de sincronização (Porta 1) |
+| **P1 ACK / DSR**   | **Pino 9** | **GPIO 21** | Pulso de confirmação de byte recebido (Porta 1) |
+| **P2 DATA (MISO)** | **Pino 1** | **GPIO 22** | Dados seriais da Porta 2 |
+| **P2 COMMAND (MOSI)**| **Pino 2** | **GPIO 25** | Comandos seriais da Porta 2 |
+| **P2 ATT / DTR**   | **Pino 6** | **GPIO 5**  | Linha de seleção da Porta 2 |
+| **P2 CLOCK (SCK)** | **Pino 7** | **GPIO 26** | Linha de clock da Porta 2 |
+| **P2 ACK / DSR**   | **Pino 9** | **GPIO 27** | Pulso de confirmação da Porta 2 |
+| **Alimentação 3.5V**| **Pino 5** | **Pino 3.3V**| Alimentação lógica do barramento serial |
+| **GND (Terra)**    | **Pino 4** | **GND**     | Referência de terra comum |
 | **LED Analógico Porta 1** | **GPIO 12** | Nível alto (3.3V) quando a Porta 1 opera em Modo Analógico |
 | **LED Analógico Porta 2** | **GPIO 15** | Nível alto (3.3V) quando a Porta 2 opera em Modo Analógico |
 | **LED Onboard (Status BT)**| **GPIO 2** | LED azul integrado da placa (indica aguardo de conexão / atividade) |
@@ -118,7 +119,7 @@ O driver baremetal utiliza temporizadores e interrupções GPIO de hardware dedi
 ### Método 1: Atualização Sem Fio via Bluetooth (OTA - Recomendado)
 Se o BlueRetro já estiver instalado no console, o procedimento pode ser realizado sem abrir o videogame e sem cabos:
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.4_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.5.1_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -127,7 +128,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.4_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.5.1_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)

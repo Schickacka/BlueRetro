@@ -1193,49 +1193,59 @@ void ps_spi_port_cfg(uint16_t mask) {
 }
 
 void ps_spi_poll(void) {
+    uint32_t cur = xthal_get_ccount();
+    uint32_t timeout_cycles = CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * PS_IDLE_RESET_US;
+
+    /* Check if the console SPI bus is alive (any port actively receiving packets) */
+    bool console_bus_alive = false;
+    for (uint32_t k = 0; k < PS_PORT_MAX; k++) {
+        if (ps_ctrl_ports[k].spi_active && (uint32_t)(cur - ps_ctrl_ports[k].last_spi_ccount) < timeout_cycles) {
+            console_bus_alive = true;
+            break;
+        }
+    }
+
     for (uint32_t i = 0; i < PS_PORT_MAX; i++) {
         struct ps_ctrl_port *port = &ps_ctrl_ports[i];
         uint32_t dev_count = (port->root_dev_type == DEV_PSX_MULTITAP) ? MT_PORT_MAX : 1;
 
-        /* Only poll PS button when the console SPI bus is idle (packet_end handles it when active) */
-        if (!port->spi_active) {
-            for (uint32_t j = 0; j < dev_count; j++) {
-                ps_analog_btn_hdlr(port, j);
-            }
+        /* Check PS button state (atomic guard inside ps_analog_btn_hdlr prevents collisions with ISR) */
+        for (uint32_t j = 0; j < dev_count; j++) {
+            ps_analog_btn_hdlr(port, j);
         }
 
-        /* Console RESET / Idle timeout: if no SPI packets for PS_IDLE_RESET_US, revert to Digital (0x41) */
-        if (port->spi_active) {
-            uint32_t cur = xthal_get_ccount();
-            if ((uint32_t)(cur - port->last_spi_ccount) > (CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * PS_IDLE_RESET_US)) {
-                port->spi_active = 0;
-                for (uint32_t j = 0; j < dev_count; j++) {
-                    if (port->dev_id[j] == 0x73) {
-                        struct raw_fb fb_data = {0};
-                        port->dev_id[j] = 0x41;
-                        port->pend_dev_id[j] = 0x41;
-                        port->dev_desc[j] = 0;
-                        port->rumble_r_state[j] = 0;
-                        port->rumble_l_state[j] = 0;
-                        port->rumble_r_val[j] = 0;
-                        port->rumble_l_val[j] = 0;
-                        __sync_synchronize();
-                        if (j == 0) {
-                            gpio_set_level_iram(port->led_pin, 0);
-                        }
-
-                        struct raw_fb stop_fb = {0};
-                        stop_fb.header.wired_id = port->id + (port->root_dev_type == DEV_PSX_MULTITAP ? j : 0);
-                        stop_fb.header.type = FB_TYPE_RUMBLE;
-                        stop_fb.header.data_len = 0;
-                        adapter_q_fb(&stop_fb);
-
-                        fb_data.header.wired_id = port->id + (port->root_dev_type == DEV_PSX_MULTITAP ? j : 0);
-                        fb_data.header.type = FB_TYPE_STATUS_LED;
-                        fb_data.header.data_len = 1;
-                        fb_data.data[0] = 0;
-                        adapter_q_fb(&fb_data);
+        /* Console RESET / Idle timeout:
+         * The console is in RESET only when the entire SPI bus is silent (no SPI packets on any port).
+         * If Port 1 is actively communicating with a running game, Port 2 must never timeout to Digital.
+         */
+        if (port->spi_active && !console_bus_alive) {
+            port->spi_active = 0;
+            for (uint32_t j = 0; j < dev_count; j++) {
+                if (port->dev_id[j] == 0x73) {
+                    struct raw_fb fb_data = {0};
+                    port->dev_id[j] = 0x41;
+                    port->pend_dev_id[j] = 0x41;
+                    port->dev_desc[j] = 0;
+                    port->rumble_r_state[j] = 0;
+                    port->rumble_l_state[j] = 0;
+                    port->rumble_r_val[j] = 0;
+                    port->rumble_l_val[j] = 0;
+                    __sync_synchronize();
+                    if (j == 0) {
+                        gpio_set_level_iram(port->led_pin, 0);
                     }
+
+                    struct raw_fb stop_fb = {0};
+                    stop_fb.header.wired_id = port->id + (port->root_dev_type == DEV_PSX_MULTITAP ? j : 0);
+                    stop_fb.header.type = FB_TYPE_RUMBLE;
+                    stop_fb.header.data_len = 0;
+                    adapter_q_fb(&stop_fb);
+
+                    fb_data.header.wired_id = port->id + (port->root_dev_type == DEV_PSX_MULTITAP ? j : 0);
+                    fb_data.header.type = FB_TYPE_STATUS_LED;
+                    fb_data.header.data_len = 1;
+                    fb_data.data[0] = 0;
+                    adapter_q_fb(&fb_data);
                 }
             }
         }
