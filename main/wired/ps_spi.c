@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2019-2025, Jacques Gagnon
  * SPDX-License-Identifier: Apache-2.0
+ * Modified by Schickacka (PlayStation 1 Custom Edition)
  */
 
 #include <string.h>
@@ -146,7 +147,8 @@ struct ps_ctrl_port {
     volatile uint32_t idx;
     volatile uint32_t mt_idx;
     volatile uint32_t valid;
-    volatile int64_t last_spi_time;
+    volatile uint32_t last_spi_ccount;
+    volatile uint32_t spi_active;
 };
 
 static struct ps_ctrl_port ps_ctrl_ports[PS_PORT_MAX] = {
@@ -272,7 +274,12 @@ static void toggle_dsr(uint32_t port) {
     }
 }
 
+static atomic_t ps_analog_busy = 0;
+
 static void ps_analog_btn_hdlr(struct ps_ctrl_port *port, uint8_t id) {
+    if (!atomic_cas(&ps_analog_busy, 0, 1)) {
+        return;
+    }
     if (port->dev_type[id] != DEV_PSX_MOUSE && port->dev_type[id] != DEV_PSX_FLIGHT
             && port->dev_type[id] != DEV_PSX_PS_2_KB_MOUSE_ADAPTER
             && (port->dev_id[id] == 0x41 || port->dev_id[id] == 0x73)) {
@@ -318,6 +325,7 @@ static void ps_analog_btn_hdlr(struct ps_ctrl_port *port, uint8_t id) {
             }
         }
     }
+    atomic_clear(&ps_analog_busy);
 }
 
 static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, uint8_t *req) {
@@ -751,7 +759,8 @@ static void packet_end(void *arg) {
     for (uint32_t i = 0; i < PS_PORT_MAX; i++) {
         if (port_int[i]) {
             struct ps_ctrl_port *port = &ps_ctrl_ports[i];
-            port->last_spi_time = esp_timer_get_time();
+            port->last_spi_ccount = xthal_get_ccount();
+            port->spi_active = 1;
             __sync_synchronize();
             set_output_state(port->id, 0);
             port->idx = 0;
@@ -1055,9 +1064,6 @@ inner_break:
             ps_ctrl_ports[i].rumble_l_idx[j] = 1;
         }
     }
-    for (uint32_t i = 0; i < WIRED_MAX_DEV; i++) {
-        config.out_cfg[i].acc_mode = ACC_RUMBLE;
-    }
 
     /* DTR */
     ps_spi_port_cfg(0x0);
@@ -1179,55 +1185,72 @@ void ps_spi_port_cfg(uint16_t mask) {
 }
 
 void ps_spi_poll(void) {
-    int64_t now = esp_timer_get_time();
-
     for (uint32_t i = 0; i < PS_PORT_MAX; i++) {
         struct ps_ctrl_port *port = &ps_ctrl_ports[i];
         uint32_t dev_count = (port->root_dev_type == DEV_PSX_MULTITAP) ? MT_PORT_MAX : 1;
 
-        /* Check PS button even when console is in reset / early boot */
-        for (uint32_t j = 0; j < dev_count; j++) {
-            ps_analog_btn_hdlr(port, j);
+        /* Only poll PS button when the console SPI bus is idle (packet_end handles it when active) */
+        if (!port->spi_active) {
+            for (uint32_t j = 0; j < dev_count; j++) {
+                ps_analog_btn_hdlr(port, j);
+            }
         }
 
         /* Console RESET / Idle timeout: if no SPI packets for PS_IDLE_RESET_US, revert to Digital (0x41) */
-        if (port->last_spi_time && (now - port->last_spi_time > PS_IDLE_RESET_US)) {
-            port->last_spi_time = 0;
-            for (uint32_t j = 0; j < dev_count; j++) {
-                if (port->dev_id[j] == 0x73) {
-                    struct raw_fb fb_data = {0};
-                    port->dev_id[j] = 0x41;
-                    port->pend_dev_id[j] = 0x41;
-                    port->dev_desc[j] = 0;
-                    port->rumble_r_state[j] = 0;
-                    port->rumble_l_state[j] = 0;
-                    port->rumble_r_val[j] = 0;
-                    port->rumble_l_val[j] = 0;
-                    __sync_synchronize();
-                    if (j == 0) {
-                        gpio_set_level_iram(port->led_pin, 0);
+        if (port->spi_active) {
+            uint32_t cur = xthal_get_ccount();
+            if ((uint32_t)(cur - port->last_spi_ccount) > (CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * PS_IDLE_RESET_US)) {
+                port->spi_active = 0;
+                for (uint32_t j = 0; j < dev_count; j++) {
+                    if (port->dev_id[j] == 0x73) {
+                        struct raw_fb fb_data = {0};
+                        port->dev_id[j] = 0x41;
+                        port->pend_dev_id[j] = 0x41;
+                        port->dev_desc[j] = 0;
+                        port->rumble_r_state[j] = 0;
+                        port->rumble_l_state[j] = 0;
+                        port->rumble_r_val[j] = 0;
+                        port->rumble_l_val[j] = 0;
+                        __sync_synchronize();
+                        if (j == 0) {
+                            gpio_set_level_iram(port->led_pin, 0);
+                        }
+
+                        struct raw_fb stop_fb = {0};
+                        stop_fb.header.wired_id = port->id + (port->root_dev_type == DEV_PSX_MULTITAP ? j : 0);
+                        stop_fb.header.type = FB_TYPE_RUMBLE;
+                        stop_fb.header.data_len = 0;
+                        adapter_q_fb(&stop_fb);
+
+                        fb_data.header.wired_id = port->id + (port->root_dev_type == DEV_PSX_MULTITAP ? j : 0);
+                        fb_data.header.type = FB_TYPE_STATUS_LED;
+                        fb_data.header.data_len = 1;
+                        fb_data.data[0] = 0;
+                        adapter_q_fb(&fb_data);
                     }
-
-                    struct raw_fb stop_fb = {0};
-                    stop_fb.header.wired_id = port->id + (port->root_dev_type == DEV_PSX_MULTITAP ? j : 0);
-                    stop_fb.header.type = FB_TYPE_RUMBLE;
-                    stop_fb.header.data_len = 0;
-                    adapter_q_fb(&stop_fb);
-
-                    fb_data.header.wired_id = port->id + (port->root_dev_type == DEV_PSX_MULTITAP ? j : 0);
-                    fb_data.header.type = FB_TYPE_STATUS_LED;
-                    fb_data.header.data_len = 1;
-                    fb_data.data[0] = 0;
-                    adapter_q_fb(&fb_data);
                 }
             }
         }
     }
 }
 
-uint8_t ps_spi_is_analog(uint8_t port_id) {
-    if (port_id < PS_PORT_MAX) {
-        return (ps_ctrl_ports[port_id].dev_id[0] == 0x73 || ps_ctrl_ports[port_id].pend_dev_id[0] == 0x73);
+uint8_t ps_spi_is_analog(uint8_t wired_id) {
+    if (wired_id >= WIRED_MAX_DEV) {
+        return 0;
+    }
+    for (uint32_t i = 0; i < PS_PORT_MAX; i++) {
+        struct ps_ctrl_port *port = &ps_ctrl_ports[i];
+        if (port->root_dev_type == DEV_PSX_MULTITAP) {
+            if (wired_id >= port->mt_first_port && wired_id < port->mt_first_port + MT_PORT_MAX) {
+                uint8_t slot = wired_id - port->mt_first_port;
+                return (port->dev_id[slot] == 0x73 || port->pend_dev_id[slot] == 0x73);
+            }
+        }
+        else {
+            if (wired_id == port->id) {
+                return (port->dev_id[0] == 0x73 || port->pend_dev_id[0] == 0x73);
+            }
+        }
     }
     return 0;
 }

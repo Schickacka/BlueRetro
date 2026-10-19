@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2019-2025, Jacques Gagnon
  * SPDX-License-Identifier: Apache-2.0
+ * Modified by Schickacka (PlayStation 1 Custom Edition)
  */
 
 #include <stdio.h>
@@ -63,6 +64,7 @@ struct bt_hci_pkt bt_hci_pkt_tmp;
 static struct bt_host_link_keys bt_host_link_keys = {0};
 static struct bt_host_le_link_keys bt_host_le_link_keys = {0};
 static RingbufHandle_t txq_hdl;
+static SemaphoreHandle_t bt_tx_mutex = NULL;
 static struct bt_dev bt_dev_conf = {0};
 static struct bt_dev bt_dev[BT_MAX_DEV] = {0};
 static atomic_t bt_flags = 0;
@@ -232,7 +234,9 @@ static void bt_fb_task(void *param) {
                             .conf0 = 0x02,
                             .conf1 = 0x08,
                         };
+                        bt_host_tx_lock();
                         bt_hid_cmd_ps_set_conf(device, (void *)&ps5_clear_led);
+                        bt_host_tx_unlock();
                     }
                     /* Fallthrough */
                 case FB_TYPE_RUMBLE:
@@ -283,7 +287,9 @@ static void bt_fb_task(void *param) {
                 bool is_rumble_on = atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON);
 
                 if (keepalive || fb_changed || (is_rumble_on && rumble_tick)) {
+                    bt_host_tx_lock();
                     bt_hid_feedback(device, bt_data->base.output);
+                    bt_host_tx_unlock();
                 }
             }
         }
@@ -605,6 +611,8 @@ int32_t bt_host_init(void) {
         return -1;
     }
 
+    bt_tx_mutex = xSemaphoreCreateRecursiveMutex();
+
     bt_host_load_keys_from_file(&bt_host_link_keys);
     bt_host_load_le_keys_from_file(&bt_host_le_link_keys);
 
@@ -618,6 +626,18 @@ int32_t bt_host_init(void) {
     }
 
     return ret;
+}
+
+void bt_host_tx_lock(void) {
+    if (bt_tx_mutex) {
+        xSemaphoreTakeRecursive(bt_tx_mutex, portMAX_DELAY);
+    }
+}
+
+void bt_host_tx_unlock(void) {
+    if (bt_tx_mutex) {
+        xSemaphoreGiveRecursive(bt_tx_mutex);
+    }
 }
 
 int32_t bt_host_txq_add(uint8_t *packet, uint32_t packet_len) {

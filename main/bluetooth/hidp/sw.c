@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2019-2025, Jacques Gagnon
  * SPDX-License-Identifier: Apache-2.0
+ * Modified by Schickacka (PlayStation 1 Custom Edition)
  */
 
 #include <stdio.h>
@@ -93,7 +94,7 @@ void bt_hid_cmd_sw_set_conf(struct bt_dev *device, void *report) {
 
 
     /* 8bitdo wont rumble w/ set_conf... */
-    if (((uint8_t *)report)[127] == FB_TYPE_RUMBLE) {
+    if (((uint8_t *)report)[127] == FB_TYPE_RUMBLE || atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON)) {
         protocol = BT_HIDP_SW_SET_RUMBLE;
         len = sizeof(struct bt_hidp_sw_rumble);
     }

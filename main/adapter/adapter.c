@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2019-2025, Jacques Gagnon
  * SPDX-License-Identifier: Apache-2.0
+ * Modified by Schickacka (PlayStation 1 Custom Edition)
  */
 
 #include <stdio.h>
@@ -14,6 +15,7 @@
 #include "sdkconfig.h"
 #include "queue_bss.h"
 #include "zephyr/types.h"
+#include "zephyr/atomic.h"
 #include "tools/util.h"
 #include "config.h"
 #include "adapter.h"
@@ -496,10 +498,19 @@ bool adapter_bridge_fb(struct raw_fb *fb_data, struct bt_data *bt_data) {
     return ret;
 }
 
+static atomic_t fb_queue_lock = 0;
+
 void IRAM_ATTR adapter_q_fb(struct raw_fb *fb_data) {
-    /* Best efford only on fb */
+    /* Best effort only on fb */
     if (!rumble_mute) {
-        queue_bss_enqueue(wired_adapter.input_q_hdl, (uint8_t *)fb_data, sizeof(*fb_data));
+        uint32_t spins = 300;
+        while (!atomic_cas(&fb_queue_lock, 0, 1) && --spins) {
+            __asm__ __volatile__("nop");
+        }
+        if (spins) {
+            queue_bss_enqueue(wired_adapter.input_q_hdl, (uint8_t *)fb_data, sizeof(*fb_data));
+            atomic_clear(&fb_queue_lock);
+        }
     }
 }
 

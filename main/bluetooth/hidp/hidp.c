@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2019-2025, Jacques Gagnon
  * SPDX-License-Identifier: Apache-2.0
+ * Modified by Schickacka (PlayStation 1 Custom Edition)
  */
 
 #include "bluetooth/host.h"
@@ -119,8 +120,10 @@ void bt_hid_cmd(uint16_t handle, uint16_t cid, uint8_t hidp_hdr, uint8_t protoco
     uint16_t packet_len = (BT_HCI_H4_HDR_SIZE + BT_HCI_ACL_HDR_SIZE
         + sizeof(struct bt_l2cap_hdr) + sizeof(struct bt_hidp_hdr) + len);
 
+    bt_host_tx_lock();
     bt_hci_pkt_tmp.h4_hdr.type = BT_HCI_H4_TYPE_ACL;
 
+    bt_acl_handle_pack(handle, 0x2);
     bt_hci_pkt_tmp.acl_hdr.handle = bt_acl_handle_pack(handle, 0x2);
     bt_hci_pkt_tmp.acl_hdr.len = packet_len - BT_HCI_H4_HDR_SIZE - BT_HCI_ACL_HDR_SIZE;
 
@@ -131,4 +134,5 @@ void bt_hid_cmd(uint16_t handle, uint16_t cid, uint8_t hidp_hdr, uint8_t protoco
     bt_hci_pkt_tmp.hidp_hdr.protocol = protocol;
 
     bt_host_txq_add((uint8_t *)&bt_hci_pkt_tmp, packet_len);
+    bt_host_tx_unlock();
 }

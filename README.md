@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.4)
+# BlueRetro — PlayStation 1 Custom Edition (v0.5)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -19,11 +19,27 @@
 
 O **BlueRetro — PlayStation 1 Custom Edition** é um firmware customizado de alta precisão para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** voltado ao console **Sony PlayStation 1** (compatível com todas as revisões de hardware: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
 
-Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi projetada e mantida por **Pedro Afonso (Schickacka)** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200) e garantir estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
+Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi desenvolvida e mantida por **Pedro Afonso (Schickacka)** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200), robustez de concorrência em tempo real e estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
 
 ---
 
-## Arquitetura e Configurações da Versão 0.4
+## Melhorias Arquiteturais e Correções Técnicas (v0.5)
+
+* **Eliminação de Condições de Corrida na Fila de Feedback (`queue_bss`):** A fila `queue_bss` (liblfds711) opera como buffer circular lock-free de produtor único e consumidor único. Para garantir integridade quando múltiplos contextos concorrentes em núcleos distintos (ISR bare-metal no Core 1 e tarefas FreeRTOS no Core 0) emitem eventos de feedback, a rotina `adapter_q_fb()` foi protegida por spinlock atômico (`fb_queue_lock`), serializando as inserções e eliminando o risco de corrupção de ponteiros.
+* **Leitura de Ciclos de Hardware (CCOUNT) no Driver Baremetal:** Substituição da chamada `esp_timer_get_time()` dentro da interrupção bare-metal do Core 1 pelo registrador de ciclos de instrução do processador (`xthal_get_ccount()`). A leitura e o armazenamento do tempo em 32 bits eliminam a sobrecarga de chamadas ao sistema operacional em contexto de interrupção e impedem a divisão de palavras de 64 bits (*word tearing*) em barramento Xtensa de 32 bits.
+* **Isolamento de Estado do Botão Analógico:** A alternância de modo via botão PS/Home em `ps_analog_btn_hdlr()` foi protegida por trava atômica (`ps_analog_busy`) e o laço de varredura `ps_spi_poll()` agora atua apenas quando o barramento SPI do console está inativo (durante o reset ou inicialização), deixando o tratamento exclusivo para a ISR quando o console estiver em comunicação ativa.
+* **Restauração do Suporte a Memory Card Virtual (`ACC_MEM`):** Remoção da sobrescrita estática que forçava `acc_mode = ACC_RUMBLE` em `ps_spi_init()`, restabelecendo o respeito às opções configuradas pelo usuário na memória não volátil e permitindo o funcionamento pleno do Memory Card Virtual.
+* **Serialização de Transmissão Bluetooth (`bt_hci_pkt_tmp`):** Implementação de mutex recursivo (`bt_tx_mutex`) para acesso ao buffer global `bt_hci_pkt_tmp`. Evita que rotinas de temporização e a tarefa periódica `bt_fb_task` colidam durante a montagem do cabeçalho L2CAP/HCI ou cálculo de CRC32, eliminando descartes de pacotes por checksum corrompido nos controles DualShock 4 e DualSense.
+* **Proteção Atômica contra Deleção Dupla de Temporizadores:** Uso de troca atômica com barreira de memória (`__atomic_exchange_n`) em `ps4_blink_stop()`, `ps4_blink_timer_cb()` e `ps_conn_rumble_timer_cb()`, garantindo que temporizadores FreeRTOS sejam desarmados e destruídos de forma estritamente única, prevenindo falhas de *use-after-free* em desconexões simultâneas.
+* **Pulso de Conexão Discreto e Respeito a `acc_mode`:** A confirmação háptica de pareamento agora verifica a habilitação de vibração na porta (`acc_mode & ACC_RUMBLE`) e emite um pulso único e suave de 150 ms no atuador leve, eliminando vibrações longas e indesejadas na bancada.
+* **Mapeamento Preciso de Status em Multitap (Jogadores 3 e 4):** A função `ps_spi_is_analog()` foi reescrita para considerar a topologia de portas e slots configurada (Multitap na Porta 1, Porta 2 ou Dual), permitindo que controles conectados aos slots subsequentes exibam corretamente as cores do LED de modo.
+* **Preservação de Rumble em Controles 8BitDo (Modo Switch):** O registrador interno de tipo de pacote (`output[127]`) agora é preservado durante eventos de LED de status, e o despachante de comandos verifica ativamente a flag `BT_DEV_RUMBLE_ON`, impedindo que relatórios de iluminação façam o controle 8BitDo chavear indevidamente para `SET_CONF` e cessar a vibração.
+* **Prevenção de Saturação no Canal de Controle para Clones de DS4:** Remoção de pacotes `SET_REPORT` redundantes no canal de controle Bluetooth em transmissões periódicas a 50 Hz, mantendo o tráfego estritamente no canal de interrupção e prevenindo bloqueios por confirmação pendente (*handshake*).
+* **Fidelidade Eletromecânica do Atuador Leve (Bit 0):** O motor de alta frequência passa a testar o bit 0 do comando (`data[0] & 0x01`) em conformidade com as especificações do protocolo Sony, aceitando tanto acionamentos com `0x01` quanto `0xFF`.
+
+---
+
+## Arquitetura e Configurações de Hardware
 
 ### 1. Deadzone Eletromecânica do Atuador de Baixa Frequência (0x40 / 64)
 * **Comportamento do Hardware Original:** No controle físico DualShock 1 (SCPH-1200), o motor esquerdo (baixa frequência) é composto por um contrapeso excêntrico de ferro maciço alimentado pela linha de 7.6V do console. Devido ao atrito estático e à inércia mecânica desse conjunto, comandos com sinal PWM inferior a `0x40` (64 em decimal) não produzem torque de partida suficiente para girar o motor físico, permanecendo completamente imóvel no hardware com fio original.

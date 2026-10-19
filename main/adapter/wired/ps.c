@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2019-2025, Jacques Gagnon
  * SPDX-License-Identifier: Apache-2.0
+ * Modified by Schickacka (PlayStation 1 Custom Edition)
  */
 
 #include <string.h>
@@ -416,7 +417,7 @@ void ps_fb_to_generic(int32_t dev_mode, struct raw_fb *raw_fb_data, struct gener
                  *    gameplay; on authentic hardware, the motor remains completely still until
                  *    active pulses exceed 0x40 (64).
                  */
-                uint8_t hf = raw_fb_data->data[0] ? 0xFF : 0x00;
+                uint8_t hf = (raw_fb_data->data[0] & 0x01) ? 0xFF : 0x00;
                 uint8_t lf = (raw_fb_data->data[1] >= 0x40) ? raw_fb_data->data[1] : 0x00;
 
                 fb_data->state = (hf || lf) ? 1 : 0;

@@ -154,6 +154,8 @@ int32_t bt_host_store_le_ltk(bt_addr_le_t *le_bdaddr, struct bt_smp_encrypt_info
 int32_t bt_host_store_le_ident(bt_addr_le_t *le_bdaddr, struct bt_smp_master_ident *master_ident);
 int32_t bt_host_get_next_accept_le_bdaddr(bt_addr_le_t *le_bdaddr);
 void bt_host_bridge(struct bt_dev *device, uint8_t report_id, uint8_t *data, uint32_t len);
+void bt_host_tx_lock(void);
+void bt_host_tx_unlock(void);
 
 #endif /* _BT_HOST_H_ */
 
