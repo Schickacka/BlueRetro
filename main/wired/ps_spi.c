@@ -1065,6 +1065,12 @@ inner_break:
         }
     }
 
+    for (uint32_t i = 0; i < WIRED_MAX_DEV; i++) {
+        if (!(config.out_cfg[i].acc_mode & ACC_MEM)) {
+            config.out_cfg[i].acc_mode = ACC_RUMBLE;
+        }
+    }
+
     /* DTR */
     ps_spi_port_cfg(0x0);
 
