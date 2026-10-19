@@ -1158,7 +1158,8 @@ void ps_spi_port_cfg(uint16_t mask) {
                     ps_ctrl_ports[i].rumble_r_val[j] = 0;
                     ps_ctrl_ports[i].rumble_l_val[j] = 0;
                 }
-                ps_ctrl_ports[i].last_spi_time = 0;
+                ps_ctrl_ports[i].last_spi_ccount = 0;
+                ps_ctrl_ports[i].spi_active = 0;
                 gpio_set_level_iram(ps_ctrl_ports[i].led_pin, 0);
                 set_output_state(i, 0);
             }
@@ -1171,7 +1172,8 @@ void ps_spi_port_cfg(uint16_t mask) {
                 ps_ctrl_ports[i].idx = 0;
                 ps_ctrl_ports[i].mt_idx = 0;
                 ps_ctrl_ports[i].valid = 0;
-                ps_ctrl_ports[i].last_spi_time = 0;
+                ps_ctrl_ports[i].last_spi_ccount = 0;
+                ps_ctrl_ports[i].spi_active = 0;
                 memset(ps_ctrl_ports[i].dev_id, 0x41, sizeof(ps_ctrl_ports[0].dev_id));
                 memset(ps_ctrl_ports[i].pend_dev_id, 0x41, sizeof(ps_ctrl_ports[0].pend_dev_id));
                 memset(ps_ctrl_ports[i].dev_desc, 0, sizeof(ps_ctrl_ports[0].dev_desc));

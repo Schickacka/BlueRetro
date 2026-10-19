@@ -68,7 +68,7 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 
 ### 6. Sincronização Atômica entre Núcleos (Dual-Core)
 * O firmware distribui suas cargas entre os dois núcleos do ESP32: o **Core 1** é responsável pelo driver baremetal SPI em tempo real (`ps_spi.c`), enquanto o **Core 0** gerencia a pilha de protocolos Bluetooth e o sistema operacional FreeRTOS (`host.c`).
-* Todas as estruturas compartilhadas de barramento e estado (`dev_id`, `pend_dev_id`, `rumble_*`, `analog_btn`, `last_spi_time`) utilizam qualificadores `volatile`, operações atômicas da API Zephyr e barreiras explícitas de memória `__sync_synchronize()`, eliminando condições de corrida entre os núcleos.
+* Todas as estruturas compartilhadas de barramento e estado (`dev_id`, `pend_dev_id`, `rumble_*`, `analog_btn`, `last_spi_ccount`, `spi_active`) utilizam qualificadores `volatile`, operações atômicas da API Zephyr e barreiras explícitas de memória `__sync_synchronize()`, eliminando condições de corrida entre os núcleos.
 
 ---
 
