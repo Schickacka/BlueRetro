@@ -406,10 +406,6 @@ static void ps_start_player_rumble(struct bt_dev *device) {
         return;
     }
 
-    /* Only vibrate if user config enabled rumble */
-    if (!(config.out_cfg[device->ids.out_idx].acc_mode & ACC_RUMBLE)) {
-        return;
-    }
 
     struct ps_conn_rumble_ctx *ctx = &ps_conn_rumble_ctxs[dev_id];
     if (ctx->timer) {
