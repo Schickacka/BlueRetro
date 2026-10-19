@@ -63,7 +63,7 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 ### 5. Sincronização Imediata de Modo Analógico e Iluminação Balanceada
 * **Sincronização na Conexão:** Ao ligar o controle no meio de uma partida na qual o console já esteja operando em modo Analógico (`0x73`), o controle entra diretamente em Analógico e acende a barra de luz na cor correspondente, sem exigir reinicialização do console ou alternância manual.
 * **Iluminação Noturna a 50%:** A barra de luz RGB opera com luminosidade equilibrada a 50% para evitar ofuscamento em ambientes com baixa iluminação:
-  * **Modo Analógico Ativo:** Vermelho clássico do SCPH-1200 (`#800000`).
+  * **Modo Analógico Ativo:** Vermelho clássico do SCPH-1200 com brilho calibrado (`#6D0000`).
   * **Modo Digital:** Branco suave / cinza ambiente (`#101010`).
 
 ### 6. Sincronização Atômica entre Núcleos (Dual-Core)

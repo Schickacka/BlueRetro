@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2019-2025, Jacques Gagnon
  * SPDX-License-Identifier: Apache-2.0
+ * Modified by Schickacka (PlayStation 1 Custom Edition)
  */
 
 #include <stdio.h>
@@ -248,13 +249,13 @@ static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
             return false;
         case FB_TYPE_STATUS_LED:
             if (ps4_is_breathing(bt_data->base.pids->id)) {
-                ps4_set_pending_led(bt_data->base.pids->id, fb_data->led ? 0x000080 : 0x101010);
+                ps4_set_pending_led(bt_data->base.pids->id, fb_data->led ? 0x00006D : 0x101010);
                 return false;
             }
             else {
                 if (fb_data->led) {
-                    /* Analog Mode ON: Red LED (SCPH-1200 style) - 50% brightness */
-                    set_conf->leds = 0x000080; /* RGB: R=128, G=0, B=0 */
+                    /* Analog Mode ON: Red LED (SCPH-1200 style) - reduced ~15% */
+                    set_conf->leds = 0x00006D; /* RGB: R=109, G=0, B=0 */
                 }
                 else {
                     /* Digital Mode (Analog OFF): Soft Grey / White - 50% brightness */
@@ -297,8 +298,8 @@ static void ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
             break;
         case FB_TYPE_STATUS_LED:
             if (fb_data->led) {
-                /* Analog Mode ON: Red LED - 50% brightness */
-                set_conf->leds = 0x000080;
+                /* Analog Mode ON: Red LED - reduced ~15% */
+                set_conf->leds = 0x00006D;
             }
             else {
                 /* Digital Mode: Soft Grey / White - 50% brightness */

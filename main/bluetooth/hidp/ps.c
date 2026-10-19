@@ -256,7 +256,7 @@ static void ps4_start_player_blink(struct bt_dev *device) {
     if (wired_adapter.system_id == PSX || wired_adapter.system_id == PS2) {
         is_analog = ps_spi_is_analog(device->ids.out_idx);
     }
-    ctx->pending_led = is_analog ? 0x000080 : 0x101010; /* SCPH-1200 style: Red for Analog, Soft Grey for Digital */
+    ctx->pending_led = is_analog ? 0x00006D : 0x101010; /* SCPH-1200 style: Red for Analog, Soft Grey for Digital */
     ctx->current_breath = 0;
     ctx->total_breaths = device->ids.out_idx + 1;
     ctx->step = 0;
@@ -298,7 +298,7 @@ static void bt_hid_ps5_init_callback(void *arg) {
         if (wired_adapter.system_id == PSX || wired_adapter.system_id == PS2) {
             is_analog = ps_spi_is_analog(device->ids.out_idx);
         }
-        uint32_t init_led = is_analog ? 0x000080 : 0x101010;
+        uint32_t init_led = is_analog ? 0x00006D : 0x101010;
 
         /* Init output data for Rumble/LED feedback */
         memset(set_conf, 0x00, sizeof(*set_conf));
