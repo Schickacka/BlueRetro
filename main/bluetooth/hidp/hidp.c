@@ -123,7 +123,6 @@ void bt_hid_cmd(uint16_t handle, uint16_t cid, uint8_t hidp_hdr, uint8_t protoco
     bt_host_tx_lock();
     bt_hci_pkt_tmp.h4_hdr.type = BT_HCI_H4_TYPE_ACL;
 
-    bt_acl_handle_pack(handle, 0x2);
     bt_hci_pkt_tmp.acl_hdr.handle = bt_acl_handle_pack(handle, 0x2);
     bt_hci_pkt_tmp.acl_hdr.len = packet_len - BT_HCI_H4_HDR_SIZE - BT_HCI_ACL_HDR_SIZE;
 
