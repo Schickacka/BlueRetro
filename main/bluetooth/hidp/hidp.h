@@ -19,7 +19,7 @@ struct bt_hci_pkt;
 struct bt_hidp_hdr {
     uint8_t hdr;
     uint8_t protocol;
-} __packed;
+} __attribute__((packed));
 
 extern const uint8_t bt_hid_led_dev_id_map[];
 extern struct bt_hci_pkt bt_hid_pkt_tmp;

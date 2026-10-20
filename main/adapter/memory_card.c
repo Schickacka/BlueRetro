@@ -189,6 +189,8 @@ bool IRAM_ATTR mc_get_ready(void) {
     return mc_ready;
 }
 #else
+void mc_init_mem(void) {
+}
 int32_t mc_init(void) {
     return 0;
 }
