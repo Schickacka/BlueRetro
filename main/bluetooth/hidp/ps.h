@@ -6,6 +6,7 @@
 #ifndef _BT_HIDP_PS_H_
 #define _BT_HIDP_PS_H_
 
+#include <stdint.h>
 #include "hidp.h"
 
 #define BT_HIDP_HID_STATUS 0x01

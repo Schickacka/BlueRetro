@@ -6,6 +6,8 @@
 #ifndef _BT_HIDP_H_
 #define _BT_HIDP_H_
 
+#include <stdint.h>
+
 #define BT_HIDP_SET_OUT        0x52
 #define BT_HIDP_SET_FE         0x53
 #define BT_HIDP_DATA_IN        0xa1
