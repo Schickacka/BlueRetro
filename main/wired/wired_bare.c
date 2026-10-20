@@ -103,11 +103,11 @@ static const wired_port_cfg_t wired_port_cfg[WIRED_MAX] = {
     NULL, /* SATURN */
     NULL, /* PCFX */
     NULL, /* JVS */
-    nsi_port_cfg, /* N64 */
-    maple_port_cfg, /* DC */
+    WIRED_OTHER(nsi_port_cfg), /* N64 */
+    WIRED_OTHER(maple_port_cfg), /* DC */
     ps_spi_port_cfg, /* PS2 */
-    nsi_port_cfg, /* GC */
-    wii_i2c_port_cfg, /* WII_EXT */
+    WIRED_OTHER(nsi_port_cfg), /* GC */
+    WIRED_OTHER(wii_i2c_port_cfg), /* WII_EXT */
     NULL, /* VB */
     NULL, /* PARALLEL_1P_OD */
     NULL, /* PARALLEL_2P_OD */
