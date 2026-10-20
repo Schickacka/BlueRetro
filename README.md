@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.5.1)
+# BlueRetro — PlayStation 1 Custom Edition (v0.6)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -20,6 +20,21 @@
 O **BlueRetro — PlayStation 1 Custom Edition** é um firmware customizado de alta precisão para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** voltado ao console **Sony PlayStation 1** (compatível com todas as revisões de hardware: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
 
 Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi desenvolvida e mantida por **Schickacka** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200), robustez de concorrência em tempo real e estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
+
+---
+
+## Novidades e Correções da Versão 0.6
+
+* **Suporte Nativo aos LEDs de Jogador do DualSense (PS5):** Mapeamento nativo dos LEDs indicadores de jogador do DualSense para identificação da porta do console (Portas 1 a 4). A barra de luz RGB do DualSense segue a identidade visual do PlayStation 1: cinza suave (`#101010`) em modo Digital e vermelho clássico SCPH-1200 (`#6D0000`) em modo Analógico. O DualSense não pisca em azul na conexão (a porta já é indicada pelos LEDs dedicados), mas mantém o pulso tátil de conexão de 150 ms.
+* **Correção Estrutural do Relatório HID do DualSense (77 Bytes):** Reestruturação do pacote HID 0x02 para 77 bytes com flags calibradas (`conf1 = 0x14`, `valid_flag2 = 0x02`, `lightbar_setup = 0x02`) e remoção do campo `use_accurate_rumble` que causava deslocamento de offsets no payload, restabelecendo a operação plena de vibração e iluminação.
+* **Isolamento de Buffer HID (`bt_hid_pkt_tmp`):** Separação completa entre o buffer de pacotes HID (`bt_hid_pkt_tmp`) e o buffer de pacotes HCI/ATT/SDP (`bt_hci_pkt_tmp`), eliminando condições de corrida na geração de relatórios de feedback e prevenindo corrupção de CRC32 nos controles DualShock 4 e DualSense.
+* **Eliminação de Temporizadores Efêmeros (`esp_timer`):** Substituição de temporizadores auto-destrutivos de blink e pulso háptico por máquinas de estado acionadas periodicamente por `bt_hid_ps_tick()` a cada 10 ms em `bt_fb_task`. Desconexões e reconexões rápidas não geram mais vazamentos de memória (*use-after-free*) ou travamentos do subsistema Bluetooth.
+* **Sincronização Precisa de Inatividade Entre Núcleos:** Centralização da leitura e comparação de contadores de ciclo no Core 0 (`ps_spi_poll()`). A interrupção bare-metal do Core 1 (`packet_end()`) agora executa estritamente dois stores de 32 bits (incremento atômico de `pkt_cnt` e sinalização de `spi_active`), eliminando chamadas desnecessárias e reduzindo a latência da ISR ao mínimo teórico.
+* **Correção de Mapeamento em Multitap e Reset de Modo:** Atualização de `ps_spi_poll()` e `ps_spi_is_analog()` para utilizar o índice real `mt_first_port`, corrigindo o mapeamento dos jogadores 3 e 4. O tratamento de reset do console foi estendido para restaurar também os identificadores `0x79` (analógico estendido) e `0xF3` (modo de configuração).
+* **Preservação de Rumble em Controles Switch / 8BitDo:** O marcador de tipo de pacote `output[127]` agora é gravado consistentemente em todos os despachos de feedback, impedindo que o chaveamento de LEDs interrompa os efeitos de vibração em controles 8BitDo e Switch Pro.
+* **Otimização de Memória PS1-Only (`BR_PS1_ONLY`):** Opção de build condicional que remove drivers de barramento de outros consoles (N64, GameCube, Saturn, SNES, etc.), liberando **23,6 KB de IRAM** e **10,9 KB de DRAM**.
+* **Desativação Padrão do Memory Card Virtual (`CONFIG_BR_PS1_MEMORY_CARD=n`):** O Memory Card Virtual fica desativado por padrão, liberando **128 KB de heap DMA** para a pilha Bluetooth e conexões simultâneas de controles. Varredura periódica de integridade em `bt_fb_task` implementada para quando o recurso for habilitado opcionalmente via Kconfig.
+* **Menu de Customização Kconfig (`PS1 Custom Edition`):** Opções configuráveis no menu do projeto para habilitar/desabilitar blink de porta, pulso háptico, modo noturno, indicação de bateria e instrumentação de latência para análise com osciloscópio.
 
 ---
 

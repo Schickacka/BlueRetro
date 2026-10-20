@@ -65,6 +65,18 @@ static struct bt_host_link_keys bt_host_link_keys = {0};
 static struct bt_host_le_link_keys bt_host_le_link_keys = {0};
 static RingbufHandle_t txq_hdl;
 static SemaphoreHandle_t bt_tx_mutex = NULL;
+#if defined(CONFIG_BR_PS1_LATENCY_STATS)
+static atomic_t txq_full_cnt = 0;
+static uint32_t max_lock_wait_us = 0;
+
+uint32_t bt_host_get_txq_full_cnt(void) {
+    return txq_full_cnt;
+}
+
+uint32_t bt_host_get_max_lock_wait_us(void) {
+    return max_lock_wait_us;
+}
+#endif
 static struct bt_dev bt_dev_conf = {0};
 static struct bt_dev bt_dev[BT_MAX_DEV] = {0};
 static atomic_t bt_flags = 0;
@@ -241,7 +253,9 @@ static void bt_fb_task(void *param) {
                     /* Fallthrough */
                 case FB_TYPE_RUMBLE:
                     if (bt_data) {
+                        bt_host_tx_lock();
                         fb_changed |= adapter_bridge_fb(fb_data, bt_data);
+                        bt_host_tx_unlock();
                     }
                     break;
                 case FB_TYPE_GAME_ID:
@@ -259,6 +273,14 @@ static void bt_fb_task(void *param) {
             }
             queue_bss_return(wired_adapter.input_q_hdl, (uint8_t *)fb_data, fb_len);
         }
+
+        /* Memory card sweep: recover dirty blocks if FB_TYPE_MEM_WRITE was dropped by queue */
+        static uint32_t mc_state_last = 0;
+        uint32_t mc_state = mc_get_state();
+        if (mc_state && !mc_state_last) {
+            mc_storage_update();
+        }
+        mc_state_last = mc_state;
 
         /* TX Feedback every 20 ms if rumble on, every 300 ms otherwise */
         bool keepalive = false;
@@ -279,6 +301,8 @@ static void bt_fb_task(void *param) {
             rumble_cnt--;
         }
 
+        bt_host_tx_lock();
+        bt_hid_ps_tick();
         for (uint32_t i = 0; i < BT_MAX_DEV; i++) {
             struct bt_dev *device = &bt_dev[i];
 
@@ -287,12 +311,11 @@ static void bt_fb_task(void *param) {
                 bool is_rumble_on = atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON);
 
                 if (keepalive || fb_changed || (is_rumble_on && rumble_tick)) {
-                    bt_host_tx_lock();
                     bt_hid_feedback(device, bt_data->base.output);
-                    bt_host_tx_unlock();
                 }
             }
         }
+        bt_host_tx_unlock();
 
         if (fb_changed) {
             rumble_cnt = BT_FB_TASK_RUMBLE_CNT;
@@ -313,6 +336,7 @@ static void bt_host_task(void *param) {
             /* Parse SDP data if available */
             if (atomic_test_bit(&device->flags, BT_DEV_DEVICE_FOUND)) {
                 if (atomic_test_bit(&device->flags, BT_DEV_SDP_DATA)) {
+                    bt_host_tx_lock();
                     int32_t old_type = device->ids.type;
 
                     bt_sdp_parser(bt_data);
@@ -322,6 +346,7 @@ static void bt_host_task(void *param) {
                         }
                     }
                     atomic_clear_bit(&device->flags, BT_DEV_SDP_DATA);
+                    bt_host_tx_unlock();
                 }
             }
         }
@@ -420,6 +445,7 @@ static int bt_host_rx_pkt(uint8_t *data, uint16_t len) {
     }
     else {
 #endif
+    bt_host_tx_lock();
     switch(bt_hci_pkt->h4_hdr.type) {
         case BT_HCI_H4_TYPE_ACL:
             bt_host_acl_hdlr(bt_hci_pkt, len);
@@ -431,6 +457,7 @@ static int bt_host_rx_pkt(uint8_t *data, uint16_t len) {
             printf("# %s unsupported packet type: 0x%02X\n", __FUNCTION__, bt_hci_pkt->h4_hdr.type);
             break;
     }
+    bt_host_tx_unlock();
 #ifdef CONFIG_BLUERETRO_BT_TIMING_TESTS
     }
 #endif
@@ -551,6 +578,7 @@ void bt_host_reset_dev(struct bt_dev *device) {
     return;
 
 reset_dev:
+    bt_host_tx_lock();
     ps4_blink_stop(dev_id);
     adapter_init_buffer(dev_id);
     memset(bt_adapter.data[dev_id].raw_src_mappings, 0, sizeof(*bt_adapter.data[0].raw_src_mappings) * REPORT_MAX);
@@ -563,6 +591,7 @@ reset_dev:
     device->ids.type = BT_NONE;
     device->ids.subtype = BT_SUBTYPE_DEFAULT;
     bt_adapter.data[dev_id].base.pids = &device->ids;
+    bt_host_tx_unlock();
 }
 
 void bt_host_q_wait_pkt(uint32_t ms) {
@@ -630,7 +659,16 @@ int32_t bt_host_init(void) {
 
 void bt_host_tx_lock(void) {
     if (bt_tx_mutex) {
+#if defined(CONFIG_BR_PS1_LATENCY_STATS)
+        uint32_t start = xthal_get_ccount();
         xSemaphoreTakeRecursive(bt_tx_mutex, portMAX_DELAY);
+        uint32_t wait_us = (xthal_get_ccount() - start) / (CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ);
+        if (wait_us > max_lock_wait_us) {
+            max_lock_wait_us = wait_us;
+        }
+#else
+        xSemaphoreTakeRecursive(bt_tx_mutex, portMAX_DELAY);
+#endif
     }
 }
 
@@ -644,8 +682,11 @@ int32_t bt_host_txq_add(uint8_t *packet, uint32_t packet_len) {
 #ifdef CONFIG_BLUERETRO_QEMU
     return 0;
 #else
-    UBaseType_t ret = xRingbufferSend(txq_hdl, (void *)packet, packet_len, portMAX_DELAY);
+    UBaseType_t ret = xRingbufferSend(txq_hdl, (void *)packet, packet_len, pdMS_TO_TICKS(10));
     if (ret != pdTRUE) {
+#if defined(CONFIG_BR_PS1_LATENCY_STATS)
+        atomic_inc(&txq_full_cnt);
+#endif
         printf("# %s txq full!\n", __FUNCTION__);
     }
     return (ret == pdTRUE ? 0 : -1);
@@ -757,6 +798,9 @@ int32_t bt_host_get_next_accept_le_bdaddr(bt_addr_le_t *le_bdaddr) {
 }
 
 void bt_host_bridge(struct bt_dev *device, uint8_t report_id, uint8_t *data, uint32_t len) {
+#if defined(CONFIG_BR_PS1_LATENCY_PROBE)
+    gpio_set_level_iram(CONFIG_BR_PS1_LATENCY_PROBE_GPIO, 0);
+#endif
     struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
     uint32_t report_type = PAD;
 

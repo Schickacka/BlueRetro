@@ -156,6 +156,10 @@ int32_t bt_host_get_next_accept_le_bdaddr(bt_addr_le_t *le_bdaddr);
 void bt_host_bridge(struct bt_dev *device, uint8_t report_id, uint8_t *data, uint32_t len);
 void bt_host_tx_lock(void);
 void bt_host_tx_unlock(void);
+#if defined(CONFIG_BR_PS1_LATENCY_STATS)
+uint32_t bt_host_get_txq_full_cnt(void);
+uint32_t bt_host_get_max_lock_wait_us(void);
+#endif
 
 #endif /* _BT_HOST_H_ */
 

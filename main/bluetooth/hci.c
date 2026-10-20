@@ -1265,6 +1265,7 @@ const char *bt_hci_get_device_name(void) {
 }
 
 void bt_hci_start_inquiry(void) {
+    bt_host_tx_lock();
     if (!inquiry_override) {
         err_led_pulse();
         inquiry_state = 1;
@@ -1274,15 +1275,18 @@ void bt_hci_start_inquiry(void) {
         bt_hci_cmd_le_set_scan_enable(1);
         bt_hci_cmd_periodic_inquiry(NULL);
     }
+    bt_host_tx_unlock();
 }
 
 void bt_hci_stop_inquiry(void) {
+    bt_host_tx_lock();
     bt_hci_cmd_exit_periodic_inquiry(NULL);
     bt_hci_cmd_le_set_scan_enable(0);
     bt_hci_cmd_le_set_scan_param_passive();
     bt_hci_cmd_le_set_scan_enable(1);
     inquiry_state = 0;
     err_led_clear();
+    bt_host_tx_unlock();
 }
 
 uint32_t bt_hci_get_inquiry(void) {
@@ -1294,9 +1298,11 @@ void bt_hci_inquiry_override(uint32_t state) {
 }
 
 void bt_hci_disconnect(struct bt_dev *device) {
+    bt_host_tx_lock();
     if (atomic_test_bit(&device->flags, BT_DEV_DEVICE_FOUND)) {
         bt_hci_cmd_disconnect(&device->acl_handle, BT_HCI_ERR_REMOTE_POWER_OFF);
     }
+    bt_host_tx_unlock();
 }
 
 void bt_hci_sniff_mode(struct bt_dev *device, uint16_t interval) {

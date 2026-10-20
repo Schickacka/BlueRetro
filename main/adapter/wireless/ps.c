@@ -270,21 +270,16 @@ static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
 static void ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_data) {
     struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
 
-    static const uint8_t ps5_player_led_mask[4] = {
-        0x04, /* Player 1: . . * . . (1 LED) */
-        0x0A, /* Player 2: . * . * . (2 LEDs) */
-        0x15, /* Player 3: * . * . * (3 LEDs) */
-        0x1B, /* Player 4: * * . * * (4 LEDs) */
-    };
-
     set_conf->conf0 = 0x02;
-    set_conf->valid_flag2 |= 0x14;
+    set_conf->conf1 = 0x14;             /* lightbar 0x04 + player indicator 0x10 */
+    set_conf->valid_flag2 = 0x02;       /* lightbar setup enable */
     set_conf->lightbar_setup = 0x02;
-    set_conf->player_leds = ps5_player_led_mask[bt_data->base.pids->out_idx & 0x3];
+    set_conf->led_brightness = ps1_led_brightness();
+    set_conf->player_leds = bt_hidp_ps5_player_led(bt_data->base.pids->out_idx);
 
     switch (fb_data->type) {
         case FB_TYPE_RUMBLE:
-            set_conf->cmd |= 0x03; /* Enable motor_right (bit 0) and motor_left (bit 1) */
+            set_conf->cmd = 0x03; /* Enable motor_right (bit 0) and motor_left (bit 1) */
             if (fb_data->state) {
                 set_conf->hf_motor_pwr = fb_data->hf_pwr;
                 set_conf->lf_motor_pwr = fb_data->lf_pwr;
@@ -297,14 +292,7 @@ static void ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
         case FB_TYPE_PLAYER_LED:
             break;
         case FB_TYPE_STATUS_LED:
-            if (fb_data->led) {
-                /* Analog Mode ON: Red LED - reduced ~15% */
-                set_conf->leds = 0x00006D;
-            }
-            else {
-                /* Digital Mode: Soft Grey / White - 50% brightness */
-                set_conf->leds = 0x101010;
-            }
+            set_conf->leds = ps1_led_color(fb_data->led);
             break;
     }
 }

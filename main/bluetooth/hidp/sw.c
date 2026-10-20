@@ -1,3 +1,4 @@
+#include "hidp.h"
 /*
  * Copyright (c) 2019-2025, Jacques Gagnon
  * SPDX-License-Identifier: Apache-2.0
@@ -84,7 +85,8 @@ static void bt_hid_sw_print_calib(struct bt_hid_sw_ctrl_calib *calib) {
 }
 
 void bt_hid_cmd_sw_set_conf(struct bt_dev *device, void *report) {
-    struct bt_hidp_sw_conf *sw_conf = (struct bt_hidp_sw_conf *)bt_hci_pkt_tmp.hidp_data;
+    bt_host_tx_lock();
+    struct bt_hidp_sw_conf *sw_conf = (struct bt_hidp_sw_conf *)bt_hid_pkt_tmp.hidp_data;
     uint8_t protocol = BT_HIDP_SW_SET_CONF;
     uint16_t len = sizeof(struct bt_hidp_sw_conf);
 
@@ -92,14 +94,29 @@ void bt_hid_cmd_sw_set_conf(struct bt_dev *device, void *report) {
     sw_conf->tid = device->tid++;
     sw_conf->tid &= 0xF;
 
+    struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
+    bool is_fb = (report == (void *)bt_data->base.output);
+    uint8_t fb_type = is_fb ? ((uint8_t *)report)[127] : FB_TYPE_PLAYER_LED;
 
-    /* 8bitdo wont rumble w/ set_conf... */
-    if (((uint8_t *)report)[127] == FB_TYPE_RUMBLE || atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON)) {
-        protocol = BT_HIDP_SW_SET_RUMBLE;
-        len = sizeof(struct bt_hidp_sw_rumble);
+    if (is_fb && fb_type != FB_TYPE_RUMBLE) {
+        /* Send LED conf */
+        bt_hid_cmd(device->acl_handle, device->intr_chan.dcid, BT_HIDP_DATA_OUT, BT_HIDP_SW_SET_CONF, sizeof(struct bt_hidp_sw_conf));
+        /* If rumble is currently active, immediately rearm with LRA rumble packet */
+        if (atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON)) {
+            sw_conf->tid = device->tid++;
+            sw_conf->tid &= 0xF;
+            bt_hid_cmd(device->acl_handle, device->intr_chan.dcid, BT_HIDP_DATA_OUT, BT_HIDP_SW_SET_RUMBLE, sizeof(struct bt_hidp_sw_rumble));
+            ((uint8_t *)report)[127] = FB_TYPE_RUMBLE;
+        }
     }
-
-    bt_hid_cmd(device->acl_handle, device->intr_chan.dcid, BT_HIDP_DATA_OUT, protocol, len);
+    else {
+        if (fb_type == FB_TYPE_RUMBLE || atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON)) {
+            protocol = BT_HIDP_SW_SET_RUMBLE;
+            len = sizeof(struct bt_hidp_sw_rumble);
+        }
+        bt_hid_cmd(device->acl_handle, device->intr_chan.dcid, BT_HIDP_DATA_OUT, protocol, len);
+    }
+    bt_host_tx_unlock();
 }
 
 void bt_hid_sw_get_calib(int32_t dev_id, struct bt_hid_sw_ctrl_calib **cal) {
@@ -215,12 +232,20 @@ static void bt_hid_sw_exec_next_state(struct bt_dev *device) {
 
 static void bt_hid_sw_init_callback(void *arg) {
     struct bt_dev *device = (struct bt_dev *)arg;
+    bt_host_tx_lock();
+    if (!device || device->ids.type != BT_SW) {
+        bt_host_tx_unlock();
+        return;
+    }
 
     printf("# %s\n", __FUNCTION__);
     if (device->hid_retry_cnt++ > SW_INIT_STATE_RETRY_MAX) {
         if (device->hid_state == SW_INIT_STATE_SET_LED) {
-            esp_timer_delete(device->timer_hdl);
-            device->timer_hdl = NULL;
+            if (device->timer_hdl) {
+                if (device->timer_hdl) { esp_timer_delete(device->timer_hdl); device->timer_hdl = NULL; }
+                device->timer_hdl = NULL;
+            }
+            bt_host_tx_unlock();
             return;
         }
         device->hid_state++;
@@ -243,6 +268,7 @@ void bt_hid_sw_init(struct bt_dev *device) {
     set_conf->r_lra.val = BT_HIDP_SW_LRA_IDLE;
     set_conf->subcmd = BT_HIDP_SW_SUBCMD_SET_LED;
     set_conf->subcmd_data[0] = bt_hid_led_dev_id_map[bt_data->base.pids->out_idx];
+    bt_data->base.output[127] = FB_TYPE_PLAYER_LED;
 
     const esp_timer_create_args_t sw_timer_args = {
         .callback = &bt_hid_sw_init_callback,
@@ -438,7 +464,7 @@ void bt_hid_sw_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, ui
                         }
                         case BT_HIDP_SW_SUBCMD_SET_LED:
                         {
-                            esp_timer_delete(device->timer_hdl);
+                            if (device->timer_hdl) { esp_timer_delete(device->timer_hdl); device->timer_hdl = NULL; }
                             device->timer_hdl = NULL;
                             break;
                         }

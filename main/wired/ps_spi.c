@@ -27,6 +27,11 @@
 #include "adapter/wired/ps.h"
 #include "wired_bare.h"
 #include "ps_spi.h"
+#if defined(CONFIG_BR_PS1_LATENCY_STATS)
+#include "bluetooth/host.h"
+#endif
+
+static uint32_t ps_idle_reset_ccnt = 0;
 #include "sdkconfig.h"
 
 enum {
@@ -147,7 +152,9 @@ struct ps_ctrl_port {
     volatile uint32_t idx;
     volatile uint32_t mt_idx;
     volatile uint32_t valid;
-    volatile uint32_t last_spi_ccount;
+    volatile uint32_t pkt_cnt;
+    uint32_t last_pkt_cnt;
+    uint32_t last_spi_ccnt;
     volatile uint32_t spi_active;
 };
 
@@ -759,9 +766,12 @@ static void packet_end(void *arg) {
     for (uint32_t i = 0; i < PS_PORT_MAX; i++) {
         if (port_int[i]) {
             struct ps_ctrl_port *port = &ps_ctrl_ports[i];
-            port->last_spi_ccount = xthal_get_ccount();
+            port->pkt_cnt++;
             port->spi_active = 1;
             __sync_synchronize();
+#if defined(CONFIG_BR_PS1_LATENCY_PROBE)
+            gpio_set_level_iram(CONFIG_BR_PS1_LATENCY_PROBE_GPIO, 1);
+#endif
             set_output_state(port->id, 0);
             port->idx = 0;
             port->mt_idx = 0;
@@ -969,6 +979,18 @@ static unsigned isr_dispatch(unsigned cause) {
 
 void ps_spi_init(uint32_t package) {
     config_set_rst_bare_core(true);
+    ps_idle_reset_ccnt = 3 * (CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * 1000000);
+#if defined(CONFIG_BR_PS1_LATENCY_PROBE)
+    gpio_config_t probe_conf = {
+        .pin_bit_mask = 1ULL << CONFIG_BR_PS1_LATENCY_PROBE_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&probe_conf);
+    gpio_set_level_iram(CONFIG_BR_PS1_LATENCY_PROBE_GPIO, 1);
+#endif
 
     for (uint32_t i = 0; i < PS_PORT_MAX; i++) {
         memset(ps_ctrl_ports[i].dev_id, 0x41, sizeof(ps_ctrl_ports[0].dev_id));
@@ -1164,7 +1186,9 @@ void ps_spi_port_cfg(uint16_t mask) {
                     ps_ctrl_ports[i].rumble_r_val[j] = 0;
                     ps_ctrl_ports[i].rumble_l_val[j] = 0;
                 }
-                ps_ctrl_ports[i].last_spi_ccount = 0;
+                ps_ctrl_ports[i].pkt_cnt = 0;
+                ps_ctrl_ports[i].last_pkt_cnt = 0;
+                ps_ctrl_ports[i].last_spi_ccnt = 0;
                 ps_ctrl_ports[i].spi_active = 0;
                 gpio_set_level_iram(ps_ctrl_ports[i].led_pin, 0);
                 set_output_state(i, 0);
@@ -1178,7 +1202,9 @@ void ps_spi_port_cfg(uint16_t mask) {
                 ps_ctrl_ports[i].idx = 0;
                 ps_ctrl_ports[i].mt_idx = 0;
                 ps_ctrl_ports[i].valid = 0;
-                ps_ctrl_ports[i].last_spi_ccount = 0;
+                ps_ctrl_ports[i].pkt_cnt = 0;
+                ps_ctrl_ports[i].last_pkt_cnt = 0;
+                ps_ctrl_ports[i].last_spi_ccnt = 0;
                 ps_ctrl_ports[i].spi_active = 0;
                 memset(ps_ctrl_ports[i].dev_id, 0x41, sizeof(ps_ctrl_ports[0].dev_id));
                 memset(ps_ctrl_ports[i].pend_dev_id, 0x41, sizeof(ps_ctrl_ports[0].pend_dev_id));
@@ -1194,12 +1220,30 @@ void ps_spi_port_cfg(uint16_t mask) {
 
 void ps_spi_poll(void) {
     uint32_t cur = xthal_get_ccount();
-    uint32_t timeout_cycles = CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * PS_IDLE_RESET_US;
+
+    for (uint32_t k = 0; k < PS_PORT_MAX; k++) {
+        struct ps_ctrl_port *port = &ps_ctrl_ports[k];
+        uint32_t cnt = port->pkt_cnt;
+        if (cnt != port->last_pkt_cnt) {
+            port->last_pkt_cnt = cnt;
+            port->last_spi_ccnt = cur;
+        }
+    }
+
+#if defined(CONFIG_BR_PS1_LATENCY_STATS)
+    static uint32_t last_stats_print = 0;
+    if ((uint32_t)(cur - last_stats_print) > 10 * (CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * 1000000)) {
+        last_stats_print = cur;
+        printf("# PS1 stats: P1_pkts=%u, P2_pkts=%u, txq_full=%u, max_lock_wait=%uus\n",
+            ps_ctrl_ports[0].pkt_cnt, ps_ctrl_ports[1].pkt_cnt,
+            bt_host_get_txq_full_cnt(), bt_host_get_max_lock_wait_us());
+    }
+#endif
 
     /* Check if the console SPI bus is alive (any port actively receiving packets) */
     bool console_bus_alive = false;
     for (uint32_t k = 0; k < PS_PORT_MAX; k++) {
-        if (ps_ctrl_ports[k].spi_active && (uint32_t)(cur - ps_ctrl_ports[k].last_spi_ccount) < timeout_cycles) {
+        if (ps_ctrl_ports[k].spi_active && (uint32_t)(cur - ps_ctrl_ports[k].last_spi_ccnt) < ps_idle_reset_ccnt) {
             console_bus_alive = true;
             break;
         }
@@ -1221,7 +1265,7 @@ void ps_spi_poll(void) {
         if (port->spi_active && !console_bus_alive) {
             port->spi_active = 0;
             for (uint32_t j = 0; j < dev_count; j++) {
-                if (port->dev_id[j] == 0x73) {
+                if (port->dev_id[j] == 0x73 || port->dev_id[j] == 0x79 || port->dev_id[j] == 0xF3) {
                     struct raw_fb fb_data = {0};
                     port->dev_id[j] = 0x41;
                     port->pend_dev_id[j] = 0x41;
@@ -1236,12 +1280,12 @@ void ps_spi_poll(void) {
                     }
 
                     struct raw_fb stop_fb = {0};
-                    stop_fb.header.wired_id = port->id + (port->root_dev_type == DEV_PSX_MULTITAP ? j : 0);
+                    stop_fb.header.wired_id = port->mt_first_port + j;
                     stop_fb.header.type = FB_TYPE_RUMBLE;
                     stop_fb.header.data_len = 0;
                     adapter_q_fb(&stop_fb);
 
-                    fb_data.header.wired_id = port->id + (port->root_dev_type == DEV_PSX_MULTITAP ? j : 0);
+                    fb_data.header.wired_id = port->mt_first_port + j;
                     fb_data.header.type = FB_TYPE_STATUS_LED;
                     fb_data.header.data_len = 1;
                     fb_data.data[0] = 0;
@@ -1261,12 +1305,14 @@ uint8_t ps_spi_is_analog(uint8_t wired_id) {
         if (port->root_dev_type == DEV_PSX_MULTITAP) {
             if (wired_id >= port->mt_first_port && wired_id < port->mt_first_port + MT_PORT_MAX) {
                 uint8_t slot = wired_id - port->mt_first_port;
-                return (port->dev_id[slot] == 0x73 || port->pend_dev_id[slot] == 0x73);
+                return (port->dev_id[slot] == 0x73 || port->dev_id[slot] == 0x79 ||
+                        port->pend_dev_id[slot] == 0x73 || port->pend_dev_id[slot] == 0x79);
             }
         }
         else {
-            if (wired_id == port->id) {
-                return (port->dev_id[0] == 0x73 || port->pend_dev_id[0] == 0x73);
+            if (wired_id == port->mt_first_port) {
+                return (port->dev_id[0] == 0x73 || port->dev_id[0] == 0x79 ||
+                        port->pend_dev_id[0] == 0x73 || port->pend_dev_id[0] == 0x79);
             }
         }
     }

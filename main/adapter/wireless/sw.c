@@ -515,10 +515,8 @@ int32_t sw_to_generic(struct bt_data *bt_data, struct wireless_ctrl *ctrl_data) 
 bool sw_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_data) {
     struct bt_hidp_sw_conf *set_conf = (struct bt_hidp_sw_conf *)bt_data->base.output;
     bool ret = true;
-    /* 8bitdo wont rumble w/ set_conf so we need keep track of fb_type somehow */
-    if (fb_data->type == FB_TYPE_RUMBLE) {
-        bt_data->base.output[127] = FB_TYPE_RUMBLE;
-    }
+    /* Track fb_type on every event so 8bitdo alternating LED/rumble works reliably */
+    bt_data->base.output[127] = fb_data->type;
 
     switch (fb_data->type) {
         case FB_TYPE_RUMBLE:

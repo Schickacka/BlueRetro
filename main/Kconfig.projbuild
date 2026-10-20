@@ -257,4 +257,73 @@ menu "BlueRetro"
 
     endmenu
 
+    menu "PS1 Custom Edition"
+
+        config BR_PS1_BLINK
+            bool "Blue LED blink on connection based on port (DS4/clones)"
+            default y
+            help
+                Enables blue breathing blink N times for Player N upon connection on DS4 and clones.
+                DualSense (DS5) does not use this blink (identifies via native player indicator LEDs).
+
+        config BR_PS1_CONN_RUMBLE
+            bool "Vibration confirmation pulse on connection"
+            default y
+            help
+                Gives a gentle 150ms rumble pulse on the light motor upon controller connection.
+
+        config BR_PS1_LED_ANALOG_COLOR
+            hex "Lightbar color in Analog Mode"
+            default 0x00006D
+            help
+                Lightbar color (0x00RRGGBB) when analog mode is active.
+                Default is 0x00006D (#6D0000) representing authentic SCPH-1200 red with ~15% attenuation.
+
+        config BR_PS1_LED_DIGITAL_COLOR
+            hex "Lightbar color in Digital Mode"
+            default 0x101010
+            help
+                Lightbar color (0x00RRGGBB) when digital mode is active.
+                Default is 0x101010 (#101010) representing a soft neutral grey.
+
+        config BR_PS1_NIGHT_MODE
+            bool "Night mode (reduced brightness)"
+            default n
+            help
+                Reduces LED colors and breathing blink brightness by 50%, and sets DS5 player LEDs to low brightness.
+
+        config BR_PS1_MEMORY_CARD
+            bool "Virtual 128KB PS1 Memory Card in SPIFFS"
+            default n
+            help
+                Enables internal 128KB PS1 memory card emulation. Consumes 128KB of DMA-capable heap.
+                Disabled by default for dedicated controller adapter role, freeing 128KB heap for the Bluetooth stack.
+
+        config BR_PS1_BATTERY_IND
+            bool "Low battery amber pulse indicator"
+            default n
+            help
+                Pulses amber LED every 30 seconds when controller battery level <= 20% and not charging.
+
+        config BR_PS1_LATENCY_STATS
+            bool "Log latency/packet stats to serial every 10s"
+            default n
+            help
+                Prints SPI frames, idle resets, TX queue drops, and lock wait times every 10 seconds.
+
+        config BR_PS1_LATENCY_PROBE
+            bool "Enable GPIO latency probe for oscilloscope"
+            default n
+            help
+                Pulses a free GPIO low on BT HID packet reception and high at SPI packet end.
+
+        config BR_PS1_LATENCY_PROBE_GPIO
+            int "GPIO number for latency probe"
+            depends on BR_PS1_LATENCY_PROBE
+            default 26
+            help
+                Free GPIO pin to use for latency measurement (do not use PS1 bus pins).
+
+    endmenu
+
 endmenu

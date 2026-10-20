@@ -276,21 +276,19 @@ static void ps4_start_player_blink(struct bt_dev *device) {
 
 static void bt_hid_ps5_init_callback(void *arg) {
     struct bt_dev *device = (struct bt_dev *)arg;
+    bt_host_tx_lock();
 
-    esp_timer_delete(device->timer_hdl);
-    device->timer_hdl = NULL;
+    if (!device || device->ids.type != BT_PS) {
+        bt_host_tx_unlock();
+        return;
+    }
 
-    atomic_set_bit(&device->flags, BT_DEV_HID_INIT_DONE);
-    printf("# PS init done\n");
+    if (device->timer_hdl) {
+        esp_timer_delete(device->timer_hdl);
+        device->timer_hdl = NULL;
+    }
 
     if (device->ids.subtype == BT_PS5_DS || device->ids.report_type == BT_HIDP_PS5_STATUS) {
-        static const uint8_t ps5_player_led_mask[4] = {
-            0x04, /* Player 1: . . * . . */
-            0x0A, /* Player 2: . * . * . */
-            0x15, /* Player 3: * . * . * */
-            0x1B, /* Player 4: * * . * * */
-        };
-
         struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
         struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
 
@@ -298,16 +296,17 @@ static void bt_hid_ps5_init_callback(void *arg) {
         if (wired_adapter.system_id == PSX || wired_adapter.system_id == PS2) {
             is_analog = ps_spi_is_analog(device->ids.out_idx);
         }
-        uint32_t init_led = is_analog ? 0x00006D : 0x101010;
+        uint32_t init_led = ps1_led_color(is_analog);
 
         /* Init output data for Rumble/LED feedback */
         memset(set_conf, 0x00, sizeof(*set_conf));
         set_conf->conf0 = 0x02;
         set_conf->cmd = 0x03;
-        set_conf->conf1 = 0x04;
-        set_conf->valid_flag2 = 0x14; /* Enable lightbar + player indicator */
+        set_conf->conf1 = 0x14;             /* lightbar 0x04 + player indicator 0x10 */
+        set_conf->valid_flag2 = 0x02;       /* lightbar setup enable */
         set_conf->lightbar_setup = 0x02;
-        set_conf->player_leds = ps5_player_led_mask[device->ids.out_idx & 0x3];
+        set_conf->led_brightness = ps1_led_brightness();
+        set_conf->player_leds = bt_hidp_ps5_player_led(device->ids.out_idx);
         set_conf->leds = init_led;
 
         struct bt_hidp_ps5_set_conf ps5_clear_led = {
@@ -316,10 +315,12 @@ static void bt_hid_ps5_init_callback(void *arg) {
         };
         struct bt_hidp_ps5_set_conf ps5_set_led = {
             .conf0 = 0x02,
-            .conf1 = 0x04,
-            .valid_flag2 = 0x14,
+            .cmd = 0x03,
+            .conf1 = 0x14,
+            .valid_flag2 = 0x02,
             .lightbar_setup = 0x02,
-            .player_leds = ps5_player_led_mask[device->ids.out_idx & 0x3],
+            .led_brightness = ps1_led_brightness(),
+            .player_leds = bt_hidp_ps5_player_led(device->ids.out_idx),
             .leds = init_led,
         };
         printf("# %s: PS5 DualSense (Player %ld)\n", __FUNCTION__, device->ids.out_idx + 1);
@@ -327,19 +328,33 @@ static void bt_hid_ps5_init_callback(void *arg) {
         bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_clear_led);
         bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_set_led);
 
-        /* Set trigger "click" haptic effect when rumble is on */
+        /* Set trigger click haptic effect when rumble is on */
         if (config.out_cfg[device->ids.out_idx].acc_mode == ACC_RUMBLE
                 || config.out_cfg[device->ids.out_idx].acc_mode == ACC_BOTH) {
             bt_hid_cmd_ps5_trigger_init(device);
         }
+
+        atomic_set_bit(&device->flags, BT_DEV_HID_INIT_DONE);
+        printf("# PS init done\n");
+
+#if defined(CONFIG_BR_PS1_CONN_RUMBLE)
         ps_start_player_rumble(device);
+#endif
     }
     else {
         /* Clone or official DS4: Start connection player blink and rumble */
         printf("# %s: DS4 (report_type: 0x%02lX, Player %ld)\n", __FUNCTION__, device->ids.report_type, device->ids.out_idx + 1);
+        atomic_set_bit(&device->flags, BT_DEV_HID_INIT_DONE);
+        printf("# PS init done\n");
+
+#if defined(CONFIG_BR_PS1_BLINK)
         ps4_start_player_blink(device);
+#endif
+#if defined(CONFIG_BR_PS1_CONN_RUMBLE)
         ps_start_player_rumble(device);
+#endif
     }
+    bt_host_tx_unlock();
 }
 
 static void bt_hid_cmd_ps5_set_conf(struct bt_dev *device, void *report) {

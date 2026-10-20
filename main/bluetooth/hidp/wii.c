@@ -1,3 +1,4 @@
+#include "hidp.h"
 /*
  * Copyright (c) 2019-2024, Jacques Gagnon
  * SPDX-License-Identifier: Apache-2.0
@@ -98,7 +99,7 @@ static void bt_wii_exec_next_state(struct bt_dev *device) {
 }
 
 static void bt_hid_cmd_wii_set_rep_mode(struct bt_dev *device, void *report) {
-    struct bt_hidp_wii_rep_mode *wii_rep_mode = (struct bt_hidp_wii_rep_mode *)bt_hci_pkt_tmp.hidp_data;
+    struct bt_hidp_wii_rep_mode *wii_rep_mode = (struct bt_hidp_wii_rep_mode *)bt_hid_pkt_tmp.hidp_data;
     printf("# %s\n", __FUNCTION__);
 
     memcpy((void *)wii_rep_mode, report, sizeof(*wii_rep_mode));
@@ -107,7 +108,7 @@ static void bt_hid_cmd_wii_set_rep_mode(struct bt_dev *device, void *report) {
 }
 
 static void bt_hid_cmd_wii_read(struct bt_dev *device, void *report) {
-    struct bt_hidp_wii_rd_mem *wii_rd_mem = (struct bt_hidp_wii_rd_mem *)bt_hci_pkt_tmp.hidp_data;
+    struct bt_hidp_wii_rd_mem *wii_rd_mem = (struct bt_hidp_wii_rd_mem *)bt_hid_pkt_tmp.hidp_data;
     printf("# %s\n", __FUNCTION__);
 
     memcpy((void *)wii_rd_mem, report, sizeof(*wii_rd_mem));
@@ -116,7 +117,7 @@ static void bt_hid_cmd_wii_read(struct bt_dev *device, void *report) {
 }
 
 static void bt_hid_cmd_wii_write(struct bt_dev *device, void *report) {
-    struct bt_hidp_wii_wr_mem *wii_wr_mem = (struct bt_hidp_wii_wr_mem *)bt_hci_pkt_tmp.hidp_data;
+    struct bt_hidp_wii_wr_mem *wii_wr_mem = (struct bt_hidp_wii_wr_mem *)bt_hid_pkt_tmp.hidp_data;
     printf("# %s\n", __FUNCTION__);
 
     memcpy((void *)wii_wr_mem, report, sizeof(*wii_wr_mem));
@@ -125,7 +126,7 @@ static void bt_hid_cmd_wii_write(struct bt_dev *device, void *report) {
 }
 
 void bt_hid_cmd_wii_set_feedback(struct bt_dev *device, void *report) {
-    struct bt_hidp_wii_conf *wii_conf = (struct bt_hidp_wii_conf *)bt_hci_pkt_tmp.hidp_data;
+    struct bt_hidp_wii_conf *wii_conf = (struct bt_hidp_wii_conf *)bt_hid_pkt_tmp.hidp_data;
     //printf("# %s\n", __FUNCTION__);
 
     memcpy((void *)wii_conf, report, sizeof(*wii_conf));

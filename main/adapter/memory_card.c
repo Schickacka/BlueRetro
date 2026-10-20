@@ -4,16 +4,21 @@
  */
 
 #include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <esp_attr.h>
+#include "sdkconfig.h"
+#include "memory_card.h"
+
+#if defined(CONFIG_BR_PS1_MEMORY_CARD) && (CONFIG_BR_PS1_MEMORY_CARD != 0)
 #include <string.h>
 #include <sys/stat.h>
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
 #include <soc/soc_memory_layout.h>
 #include "xtensa/core-macros.h"
-#include "sdkconfig.h"
 #include "system/fs.h"
 #include "config.h"
-#include "memory_card.h"
 
 /* Related to bare metal hack, something goes writing there. */
 /* Workaround: Remove region from heap pool until I figure it out */
@@ -51,113 +56,96 @@ static int32_t mc_restore(void) {
             printf("# %s: failed to open file for reading\n", __FUNCTION__);
         }
         else {
-            uint32_t count = 0;
             for (uint32_t i = 0; i < MC_BUFFER_BLOCK_CNT; i++) {
-                count += fread((void *)mc_buffer[i], MC_BUFFER_BLOCK_SIZE, 1, file);
+                uint32_t count = fread((void *)mc_buffer[i], MC_BLOCK_SIZE, 1, file);
+                if (count != 1) {
+                    printf("# %s: failed to read file %ld\n", __FUNCTION__, i);
+                    ret = -1;
+                    break;
+                }
+                ret = 0;
             }
             fclose(file);
-
-            if (count == MC_BUFFER_BLOCK_CNT) {
-                ret = 0;
-                printf("# %s: restore sucessful!\n", __FUNCTION__);
-            }
-            else {
-                printf("# %s: restore failed! cnt: %ld File size:%ld\n", __FUNCTION__, count, st.st_size);
-            }
         }
     }
+
     return ret;
 }
 
 static int32_t mc_store(void) {
     int32_t ret = -1;
-
     FILE *file = fopen(MEMORY_CARD_FILE, "wb");
     if (file == NULL) {
         printf("# %s: failed to open file for writing\n", __FUNCTION__);
     }
     else {
-        uint32_t count = 0;
         for (uint32_t i = 0; i < MC_BUFFER_BLOCK_CNT; i++) {
-            count += fwrite((void *)mc_buffer[i], MC_BUFFER_BLOCK_SIZE, 1, file);
+            uint32_t count = fwrite((void *)mc_buffer[i], MC_BLOCK_SIZE, 1, file);
+            if (count != 1) {
+                printf("# %s: failed to write file %ld\n", __FUNCTION__, i);
+                ret = -1;
+                break;
+            }
+            ret = 0;
         }
         fclose(file);
-
-        if (count == MC_BUFFER_BLOCK_CNT) {
-            ret = 0;
-            mc_block_state = 0;
-        }
-        printf("# %s: file updated cnt: %ld\n", __FUNCTION__, count);
     }
+
     return ret;
 }
 
 static int32_t mc_store_spread(void) {
-    int32_t ret = -1;
+    int32_t ret = 0;
+    uint32_t block = __builtin_ffs(mc_block_state) - 1;
 
     FILE *file = fopen(MEMORY_CARD_FILE, "r+b");
     if (file == NULL) {
         printf("# %s: failed to open file for writing\n", __FUNCTION__);
+        ret = -1;
     }
     else {
-        uint32_t block = __builtin_ffs(mc_block_state);
-
-        if (block) {
-            uint32_t count = 0;
-            block -= 1;
-
-            fseek(file, block * MC_BUFFER_BLOCK_SIZE, SEEK_SET);
-            count = fwrite((void *)mc_buffer[block], MC_BUFFER_BLOCK_SIZE, 1, file);
-            fclose(file);
-
-            if (count == 1) {
-                ret = 0;
-                atomic_clear_bit(&mc_block_state, block);
-            }
-
-            printf("# %s: block %ld updated cnt: %ld\n", __FUNCTION__, block, count);
-
-            if (mc_block_state) {
-                mc_start_update_timer(20000);
-            }
+        fseek(file, block * MC_BLOCK_SIZE, SEEK_SET);
+        uint32_t count = fwrite((void *)mc_buffer[block], MC_BLOCK_SIZE, 1, file);
+        if (count != 1) {
+            printf("# %s: failed to write block %ld\n", __FUNCTION__, block);
+            ret = -1;
         }
+        fclose(file);
+        atomic_clear_bit(&mc_block_state, block);
     }
+
     return ret;
 }
 
 static inline void mc_store_cb(void *arg) {
-    (void)mc_store_spread();
-}
-
-int32_t mc_init_mem(void) {
-    for (uint32_t i = 0; i < MC_BUFFER_BLOCK_CNT; i++) {
-        mc_buffer[i] = heap_caps_malloc(MC_BUFFER_BLOCK_SIZE, MALLOC_CAP_DMA);
-
-        if (mc_buffer[i] == NULL) {
-            printf("# %s mc_buffer[%ld] alloc fail\n", __FUNCTION__, i);
-            heap_caps_dump_all();
-            return -1;
-        }
+    mc_store_spread();
+    if (mc_block_state) {
+        mc_start_update_timer(20000);
     }
-
-    return 0;
 }
 
 int32_t mc_init(void) {
     int32_t ret = -1;
 
-    if (config.global_cfg.banksel < CONFIG_BANKSEL_MAX) {
-        const esp_timer_create_args_t mc_timer_args = {
-            .callback = &mc_store_cb,
-            .arg = (void *)NULL,
-            .name = "mc_timer"
-        };
-
-        esp_timer_create(&mc_timer_args, &mc_timer_hdl);
-
-        ret = mc_restore();
+    for (uint32_t i = 0; i < MC_BUFFER_BLOCK_CNT; i++) {
+        mc_buffer[i] = heap_caps_malloc(MC_BLOCK_SIZE, MALLOC_CAP_DMA);
+        if (mc_buffer[i] == NULL) {
+            printf("# %s: failed to alloc block %ld\n", __FUNCTION__, i);
+            goto inc_init_fail;
+        }
     }
 
+    const esp_timer_create_args_t mc_timer_args = {
+        .callback = &mc_store_cb,
+        .arg = NULL,
+        .name = "mc_timer"
+    };
+
+    esp_timer_create(&mc_timer_args, &mc_timer_hdl);
+
+    ret = mc_restore();
+
+inc_init_fail:
     if (ret == 0) {
         mc_ready = true;
     }
@@ -169,7 +157,6 @@ void mc_storage_update(void) {
     mc_start_update_timer(1000000);
 }
 
-/* Assume r/w size will never cross blocks boundary */
 void IRAM_ATTR mc_read(uint32_t addr, uint8_t *data, uint32_t size) {
     memcpy(data, mc_buffer[addr >> 12] + (addr & 0xFFF), size);
 }
@@ -201,3 +188,23 @@ uint32_t IRAM_ATTR mc_get_state(void) {
 bool IRAM_ATTR mc_get_ready(void) {
     return mc_ready;
 }
+#else
+int32_t mc_init(void) {
+    return 0;
+}
+void mc_storage_update(void) {
+}
+void IRAM_ATTR mc_read(uint32_t addr, uint8_t *data, uint32_t size) {
+}
+void IRAM_ATTR mc_write(uint32_t addr, uint8_t *data, uint32_t size) {
+}
+uint8_t IRAM_ATTR *mc_get_ptr(uint32_t addr) {
+    return NULL;
+}
+uint32_t IRAM_ATTR mc_get_state(void) {
+    return 0;
+}
+bool IRAM_ATTR mc_get_ready(void) {
+    return false;
+}
+#endif

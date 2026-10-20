@@ -501,7 +501,7 @@ bool adapter_bridge_fb(struct raw_fb *fb_data, struct bt_data *bt_data) {
 static atomic_t fb_queue_lock = 0;
 
 void IRAM_ATTR adapter_q_fb(struct raw_fb *fb_data) {
-    /* Best effort only on fb */
+    /* Best effort only on fb; FB_TYPE_MEM_WRITE drops are recovered by bt_fb_task periodic mc_block_state sweep */
     if (!rumble_mute) {
         uint32_t spins = 300;
         while (!atomic_cas(&fb_queue_lock, 0, 1) && --spins) {

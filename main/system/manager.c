@@ -356,7 +356,9 @@ static void update_onboard_led(uint32_t tick) {
 static void wired_port_hdl(void) {
     uint32_t update = 0;
     uint16_t port_mask = 0;
+#ifdef CONFIG_BLUERETRO_HW2
     uint8_t err_led_set = 0;
+#endif
 
     for (int32_t i = 0, j = 0, idx = 0; i < BT_MAX_DEV; i++) {
         struct bt_dev *device = NULL;

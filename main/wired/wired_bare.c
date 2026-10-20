@@ -5,6 +5,11 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "ps_spi.h"
+
+#ifdef BR_PS1_ONLY
+#define WIRED_OTHER(func) NULL
+#else
 #include "npiso_io.h"
 #include "cdi_uart.h"
 #include "sega_io.h"
@@ -13,11 +18,12 @@
 #include "maple.h"
 #include "jvs_uart.h"
 #include "pcfx_spi.h"
-#include "ps_spi.h"
 #include "real_spi.h"
 #include "snes_spi.h"
 #include "jag_io.h"
 #include "wii_i2c.h"
+#define WIRED_OTHER(func) func
+#endif
 #include "adapter/adapter.h"
 #include "wired_bare.h"
 
@@ -58,24 +64,24 @@ static const wired_init_t wired_init[WIRED_MAX] = {
     NULL, /* WIRED_AUTO */
     NULL, /* PARALLEL_1P */
     NULL, /* PARALLEL_2P */
-    npiso_init, /* NES */
-    pce_io_init, /* PCE */
-    sega_io_init, /* GENESIS */
-    snes_spi_init, /* SNES */
-    cdi_uart_init, /* CDI */
+    WIRED_OTHER(npiso_init), /* NES */
+    WIRED_OTHER(pce_io_init), /* PCE */
+    WIRED_OTHER(sega_io_init), /* GENESIS */
+    WIRED_OTHER(snes_spi_init), /* SNES */
+    WIRED_OTHER(cdi_uart_init), /* CDI */
     NULL, /* CD32 */
-    real_spi_init, /* REAL_3DO */
-    jag_io_init, /* JAGUAR */
+    WIRED_OTHER(real_spi_init), /* REAL_3DO */
+    WIRED_OTHER(jag_io_init), /* JAGUAR */
     ps_spi_init, /* PSX */
-    sega_io_init, /* SATURN */
-    pcfx_spi_init, /* PCFX */
-    jvs_init, /* JVS */
-    nsi_init, /* N64 */
-    maple_init, /* DC */
+    WIRED_OTHER(sega_io_init), /* SATURN */
+    WIRED_OTHER(pcfx_spi_init), /* PCFX */
+    WIRED_OTHER(jvs_init), /* JVS */
+    WIRED_OTHER(nsi_init), /* N64 */
+    WIRED_OTHER(maple_init), /* DC */
     ps_spi_init, /* PS2 */
-    nsi_init, /* GC */
-    wii_i2c_init, /* WII_EXT */
-    npiso_init, /* VB */
+    WIRED_OTHER(nsi_init), /* GC */
+    WIRED_OTHER(wii_i2c_init), /* WII_EXT */
+    WIRED_OTHER(npiso_init), /* VB */
     NULL, /* PARALLEL_1P_OD */
     NULL, /* PARALLEL_2P_OD */
     NULL, /* SEA_BOARD */

@@ -81,10 +81,10 @@ struct bt_hidp_ps5_set_conf {
     uint8_t tbd5[5];
     uint8_t l2_haptic_power_level;
     uint8_t tbd6; // Internal speaker volume
-    uint8_t use_accurate_rumble;
     uint8_t valid_flag2;
     uint8_t reserved3[2];
     uint8_t lightbar_setup;
+    uint8_t led_brightness;
     uint8_t player_leds;
     union {
         struct {
@@ -97,11 +97,60 @@ struct bt_hidp_ps5_set_conf {
     uint32_t crc;
 } __packed;
 
+#ifdef CONFIG_BR_PS1_LED_ANALOG_COLOR
+#define BR_PS1_COLOR_ANALOG CONFIG_BR_PS1_LED_ANALOG_COLOR
+#else
+#define BR_PS1_COLOR_ANALOG 0x00006D
+#endif
+
+#ifdef CONFIG_BR_PS1_LED_DIGITAL_COLOR
+#define BR_PS1_COLOR_DIGITAL CONFIG_BR_PS1_LED_DIGITAL_COLOR
+#else
+#define BR_PS1_COLOR_DIGITAL 0x101010
+#endif
+
+static inline uint32_t ps1_led_color(uint8_t is_analog) {
+#ifdef CONFIG_BR_PS1_NIGHT_MODE
+    uint32_t c = is_analog ? BR_PS1_COLOR_ANALOG : BR_PS1_COLOR_DIGITAL;
+    uint8_t r = ((c >> 16) & 0xFF) / 2;
+    uint8_t g = ((c >> 8) & 0xFF) / 2;
+    uint8_t b = (c & 0xFF) / 2;
+    return (r << 16) | (g << 8) | b;
+#else
+    return is_analog ? BR_PS1_COLOR_ANALOG : BR_PS1_COLOR_DIGITAL;
+#endif
+}
+
+static inline uint8_t ps1_led_brightness(void) {
+#ifdef CONFIG_BR_PS1_NIGHT_MODE
+    return 0x01;
+#else
+    return 0x02;
+#endif
+}
+
+static inline uint8_t ps1_blink_brightness_max(void) {
+#ifdef CONFIG_BR_PS1_NIGHT_MODE
+    return 64;
+#else
+    return 128;
+#endif
+}
+
+static inline uint8_t bt_hidp_ps5_player_led(uint8_t out_idx) {
+    static const uint8_t ps5_player_masks[] = { 0x04, 0x0A, 0x15, 0x1B, 0x1F };
+    if (out_idx < sizeof(ps5_player_masks)) {
+        return ps5_player_masks[out_idx];
+    }
+    return 0x1F;
+}
+
 void bt_hid_cmd_ps_set_conf(struct bt_dev *device, void *report);
 void bt_hid_ps_init(struct bt_dev *device);
 void bt_hid_ps_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, uint32_t len);
 uint8_t ps4_is_breathing(uint8_t dev_id);
 void ps4_set_pending_led(uint8_t dev_id, uint32_t color);
 void ps4_blink_stop(uint8_t dev_id);
+void bt_hid_ps_tick(void);
 
 #endif /* _BT_HIDP_PS_H_ */

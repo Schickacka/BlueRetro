@@ -18,6 +18,8 @@ typedef void (*bt_hid_init_t)(struct bt_dev *device);
 typedef void (*bt_hid_hdlr_t)(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, uint32_t len);
 typedef void (*bt_hid_cmd_t)(struct bt_dev *device, void *report);
 
+struct bt_hci_pkt bt_hid_pkt_tmp;
+
 const uint8_t bt_hid_led_dev_id_map[] = {
     0x1, 0x2, 0x4, 0x8, 0x3, 0x6, 0xC
 };
@@ -121,17 +123,17 @@ void bt_hid_cmd(uint16_t handle, uint16_t cid, uint8_t hidp_hdr, uint8_t protoco
         + sizeof(struct bt_l2cap_hdr) + sizeof(struct bt_hidp_hdr) + len);
 
     bt_host_tx_lock();
-    bt_hci_pkt_tmp.h4_hdr.type = BT_HCI_H4_TYPE_ACL;
+    bt_hid_pkt_tmp.h4_hdr.type = BT_HCI_H4_TYPE_ACL;
 
-    bt_hci_pkt_tmp.acl_hdr.handle = bt_acl_handle_pack(handle, 0x2);
-    bt_hci_pkt_tmp.acl_hdr.len = packet_len - BT_HCI_H4_HDR_SIZE - BT_HCI_ACL_HDR_SIZE;
+    bt_hid_pkt_tmp.acl_hdr.handle = bt_acl_handle_pack(handle, 0x2);
+    bt_hid_pkt_tmp.acl_hdr.len = packet_len - BT_HCI_H4_HDR_SIZE - BT_HCI_ACL_HDR_SIZE;
 
-    bt_hci_pkt_tmp.l2cap_hdr.len = bt_hci_pkt_tmp.acl_hdr.len - sizeof(bt_hci_pkt_tmp.l2cap_hdr);
-    bt_hci_pkt_tmp.l2cap_hdr.cid = cid;
+    bt_hid_pkt_tmp.l2cap_hdr.len = bt_hid_pkt_tmp.acl_hdr.len - sizeof(bt_hid_pkt_tmp.l2cap_hdr);
+    bt_hid_pkt_tmp.l2cap_hdr.cid = cid;
 
-    bt_hci_pkt_tmp.hidp_hdr.hdr = hidp_hdr;
-    bt_hci_pkt_tmp.hidp_hdr.protocol = protocol;
+    bt_hid_pkt_tmp.hidp_hdr.hdr = hidp_hdr;
+    bt_hid_pkt_tmp.hidp_hdr.protocol = protocol;
 
-    bt_host_txq_add((uint8_t *)&bt_hci_pkt_tmp, packet_len);
+    bt_host_txq_add((uint8_t *)&bt_hid_pkt_tmp, packet_len);
     bt_host_tx_unlock();
 }

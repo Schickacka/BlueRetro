@@ -1,3 +1,4 @@
+#include "hidp.h"
 /*
  * Copyright (c) 2019-2024, Jacques Gagnon
  * SPDX-License-Identifier: Apache-2.0
@@ -21,7 +22,7 @@ static const uint8_t ps3_config[] = {
 };
 
 static void bt_hid_cmd_ps3_bt_init(struct bt_dev *device) {
-    struct bt_hidp_ps3_bt_init *bt_init = (struct bt_hidp_ps3_bt_init *)bt_hci_pkt_tmp.hidp_data;
+    struct bt_hidp_ps3_bt_init *bt_init = (struct bt_hidp_ps3_bt_init *)bt_hid_pkt_tmp.hidp_data;
 
     memcpy((void *)bt_init, bt_init_magic, sizeof(*bt_init));
 
@@ -30,19 +31,24 @@ static void bt_hid_cmd_ps3_bt_init(struct bt_dev *device) {
 
 static void bt_hid_ps3_init_callback(void *arg) {
     struct bt_dev *device = (struct bt_dev *)arg;
+    bt_host_tx_lock();
+    if (!device || device->ids.type != BT_PS3) {
+        bt_host_tx_unlock();
+        return;
+    }
+    if (device->timer_hdl) {
+        esp_timer_delete(device->timer_hdl);
+        device->timer_hdl = NULL;
+    }
     struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
-
     printf("# %s\n", __FUNCTION__);
-
-    esp_timer_delete(device->timer_hdl);
-    device->timer_hdl = NULL;
     bt_hid_cmd_ps3_set_conf(device, bt_data->base.output);
-
     atomic_set_bit(&device->flags, BT_DEV_HID_INIT_DONE);
+    bt_host_tx_unlock();
 }
 
 void bt_hid_cmd_ps3_set_conf(struct bt_dev *device, void *report) {
-    struct bt_hidp_ps3_set_conf *set_conf = (struct bt_hidp_ps3_set_conf *)bt_hci_pkt_tmp.hidp_data;
+    struct bt_hidp_ps3_set_conf *set_conf = (struct bt_hidp_ps3_set_conf *)bt_hid_pkt_tmp.hidp_data;
     memcpy((void *)set_conf, report, sizeof(*set_conf));
     bt_hid_cmd(device->acl_handle, device->ctrl_chan.dcid, BT_HIDP_SET_OUT, BT_HIDP_PS3_SET_CONF, sizeof(*set_conf));
 }

@@ -4,10 +4,15 @@
  */
 
 #include <stddef.h>
-#include "parallel.h"
-#include "sea_io.h"
 #include "adapter/adapter.h"
 #include "wired_rtos.h"
+
+#ifdef BR_PS1_ONLY
+void wired_rtos_init(void) {
+}
+#else
+#include "parallel.h"
+#include "sea_io.h"
 
 typedef void (*wired_init_t)(void);
 
@@ -43,4 +48,4 @@ void wired_rtos_init(void) {
         wired_init[wired_adapter.system_id]();
     }
 }
-
+#endif

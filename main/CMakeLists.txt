@@ -102,6 +102,44 @@ if(CONFIG_BLUERETRO_COVERAGE)
     )
 endif()
 
+if(CONFIG_BLUERETRO_SYSTEM_PSX_PS2)
+    list(REMOVE_ITEM cov_srcs
+        "adapter/wired/npiso.c"
+        "adapter/wired/cdi.c"
+        "adapter/wired/saturn.c"
+        "adapter/wired/pce.c"
+        "adapter/wired/genesis.c"
+        "adapter/wired/real.c"
+        "adapter/wired/jag.c"
+        "adapter/wired/pcfx.c"
+        "adapter/wired/jvs.c"
+        "adapter/wired/n64.c"
+        "adapter/wired/dc.c"
+        "adapter/wired/gc.c"
+        "adapter/wired/sea.c"
+        "adapter/wired/wii.c"
+        "adapter/wired/parallel_1p.c"
+        "adapter/wired/parallel_2p.c"
+    )
+    list(REMOVE_ITEM srcs
+        "wired/npiso_io.c"
+        "wired/cdi_uart.c"
+        "wired/pce_io.c"
+        "wired/sega_io.c"
+        "wired/nsi.c"
+        "wired/maple.c"
+        "wired/jvs_uart.c"
+        "wired/parallel.c"
+        "wired/pcfx_spi.c"
+        "wired/real_spi.c"
+        "wired/snes_spi.c"
+        "wired/jag_io.c"
+        "wired/sea_io.c"
+        "wired/wii_i2c.c"
+    )
+    idf_build_set_property(COMPILE_DEFINITIONS "-DBR_PS1_ONLY=1" APPEND)
+endif()
+
 idf_component_register(
     SRCS "${srcs}" "${cov_srcs}"
     PRIV_INCLUDE_DIRS "."

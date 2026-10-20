@@ -20,6 +20,7 @@ struct bt_hidp_hdr {
 } __packed;
 
 extern const uint8_t bt_hid_led_dev_id_map[];
+extern struct bt_hci_pkt bt_hid_pkt_tmp;
 
 void bt_hid_set_type_flags_from_name(struct bt_dev *device, const char* name);
 void bt_hid_init(struct bt_dev *device);

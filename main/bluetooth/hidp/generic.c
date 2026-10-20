@@ -7,6 +7,8 @@
 #include "bluetooth/att_hid.h"
 #include "generic.h"
 
+#include "hidp.h"
+
 void bt_hid_cmd_generic_rumble(struct bt_dev *device, void *report) {
     struct bt_hidp_generic_rumble *rumble_report = (struct bt_hidp_generic_rumble *)report;
 
@@ -15,8 +17,10 @@ void bt_hid_cmd_generic_rumble(struct bt_dev *device, void *report) {
             bt_att_write_hid_report(device, rumble_report->report_id, rumble_report->state, rumble_report->report_size);
         }
         else {
-            memcpy(bt_hci_pkt_tmp.hidp_data, rumble_report->state, rumble_report->report_size);
+            bt_host_tx_lock();
+            memcpy(bt_hid_pkt_tmp.hidp_data, rumble_report->state, rumble_report->report_size);
             bt_hid_cmd(device->acl_handle, device->intr_chan.dcid, BT_HIDP_DATA_OUT, rumble_report->report_id, rumble_report->report_size);
+            bt_host_tx_unlock();
         }
     }
 }
