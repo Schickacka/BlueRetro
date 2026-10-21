@@ -316,7 +316,10 @@ static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
             return true;
         case FB_TYPE_PLAYER_LED:
             if (!ps4_is_breathing(bt_data->base.pids->id)) {
-                set_conf->leds = hw_config.ps_ctrl_colors[bt_data->base.pids->out_idx];
+                uint32_t color = ps1_battery_pulse_active(bt_data->base.pids->id)
+                    ? ps1_battery_color()
+                    : ps1_led_color(ps1_is_analog_for(bt_data));
+                set_conf->leds = color;
                 return true;
             }
             return false;

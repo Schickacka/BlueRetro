@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.6.1)
+# BlueRetro — PlayStation 1 Custom Edition (v0.6.2)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -20,6 +20,15 @@
 O **BlueRetro — PlayStation 1 Custom Edition** é um firmware customizado de alta precisão para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** voltado ao console **Sony PlayStation 1** (compatível com todas as revisões de hardware: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
 
 Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi desenvolvida e mantida por **Schickacka** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200), robustez de concorrência em tempo real e estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
+
+---
+
+## Novidades e Correções da Versão 0.6.2
+
+* **Rumble Ativo em Modo Digital no PS1 (`0x41`):** Correção do gate de vibração em `ps_spi.c` para filtrar exclusivamente por tipo de dispositivo (`port->dev_type[id] != DEV_PS2_DS2`) em vez de identificador de modo (`dev_id`). Isso preserva o comportamento autêntico do fork de permitir vibração mesmo quando o PlayStation 1 ainda enxerga o controle como digital (`0x41`), antes da alternância para analógico (`0x73`) pelo jogo ou pelo botão PS/Analog.
+* **Fidelidade Cromática dos LEDs de Jogador no DualShock 4:** Os LEDs de jogador do DualShock 4 passam a utilizar `ps1_led_color(ps1_is_analog_for(bt_data))` e `ps1_battery_color()`, respeitando as cores configuradas no Kconfig e atenuando adequadamente em Modo Noturno, idêntico ao comportamento do DualSense.
+* **Prevenção de Sobrescrita do Rumble pelo Pulso de Pareamento:** Ao término do pulso de conexão de 150 ms, os motores só são restaurados para o estado de repouso se nenhum comando de vibração tiver sido enviado pelo jogo durante a janela de pareamento (`HF=0xFF, LF=0x00`).
+* **Suporte a Acessos Atravessando Blocos no Memory Card Virtual:** Implementada leitura e escrita contínua com quebra de blocos de 4 KB em `mc_read()` e `mc_write()`, bounds checking estrito e retorno seguro de bloco zerado em `mc_get_ptr()`.
 
 ---
 

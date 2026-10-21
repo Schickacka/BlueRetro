@@ -347,12 +347,15 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
         case 0x42:
         {
             /*
-             * A digital pad (0x41) has no rumble actuators and must not emit
-             * feedback even if a game sends command 0x42 to it. The acc_mode
-             * gate is intentionally NOT restored here: this fork deliberately
-             * keeps rumble active regardless of ACC_RUMBLE/ACC_MEM.
+             * Do not gate this by dev_id. The emulated Bluetooth pad can
+             * rumble even while the PS1 sees it as a digital pad (0x41);
+             * gating by dev_id broke rumble before the analog button/game
+             * configuration switched the ID to 0x73. Only non-pad
+             * accessories (mouse/flight) have no rumble motors.
+             * The acc_mode gate is intentionally NOT restored here: this
+             * fork keeps rumble active regardless of ACC_RUMBLE/ACC_MEM.
              */
-            if (port->dev_id[id] != 0x73 && port->dev_id[id] != 0x79 && port->dev_id[id] != 0xF3) {
+            if (port->dev_type[id] != DEV_PS2_DS2) {
                 break;
             }
             req++;

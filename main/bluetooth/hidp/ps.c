@@ -546,17 +546,27 @@ void bt_hid_ps_tick(void) {
                 if (rctx->tick_cnt >= 15) { /* 15 * 10ms = 150ms */
                     rctx->active = false;
                     struct bt_data *bt_data = &bt_adapter.data[dev->ids.id];
+                    /*
+                     * The pulse must never clobber real game feedback. Only
+                     * restore the pre-pulse values if the output still holds
+                     * the pulse itself (HF=0xFF, LF=0x00). If the game wrote
+                     * new rumble during the 150 ms window, its values win.
+                     */
                     if (dev->ids.subtype == BT_PS5_DS) {
                         struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
-                        set_conf->hf_motor_pwr = rctx->saved_hf;
-                        set_conf->lf_motor_pwr = rctx->saved_lf;
-                        bt_hid_cmd_ps5_set_conf(dev, (void *)set_conf);
+                        if (set_conf->hf_motor_pwr == 0xFF && set_conf->lf_motor_pwr == 0x00) {
+                            set_conf->hf_motor_pwr = rctx->saved_hf;
+                            set_conf->lf_motor_pwr = rctx->saved_lf;
+                            bt_hid_cmd_ps5_set_conf(dev, (void *)set_conf);
+                        }
                     }
                     else {
                         struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
-                        set_conf->hf_motor_pwr = rctx->saved_hf;
-                        set_conf->lf_motor_pwr = rctx->saved_lf;
-                        bt_hid_cmd_ps4_set_conf(dev, (void *)set_conf);
+                        if (set_conf->hf_motor_pwr == 0xFF && set_conf->lf_motor_pwr == 0x00) {
+                            set_conf->hf_motor_pwr = rctx->saved_hf;
+                            set_conf->lf_motor_pwr = rctx->saved_lf;
+                            bt_hid_cmd_ps4_set_conf(dev, (void *)set_conf);
+                        }
                     }
                 }
             }
