@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.6.2)
+# BlueRetro — PlayStation 1 Custom Edition (v0.6.3)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -20,6 +20,13 @@
 O **BlueRetro — PlayStation 1 Custom Edition** é um firmware customizado de alta precisão para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** voltado ao console **Sony PlayStation 1** (compatível com todas as revisões de hardware: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
 
 Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi desenvolvida e mantida por **Schickacka** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200), robustez de concorrência em tempo real e estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
+
+---
+
+## Novidades e Correções da Versão 0.6.3
+
+* **Ativação Padrão do Indicador de Bateria Baixa (`CONFIG_BR_PS1_BATTERY_IND=y`):** O indicador luminoso de bateria fraca passa a ser ativado por padrão na compilação oficial. Em controles DualShock 4 e DualSense com nível de carga crítico (<= 20%) e sem cabo de carregamento conectado, a barra luminosa emite um pulso âmbar suave (`0x000080FF`) a cada 30 segundos, sem interferir no controle ou no rumble do jogo.
+* **Confirmação de Desativação do Memory Card Virtual (`CONFIG_BR_PS1_MEMORY_CARD=n`):** Mantido desativado por padrão conforme especificação do projeto para adaptador dedicado de controles, preservando 128 KB de heap DMA livre para conexões Bluetooth simultâneas e máxima estabilidade.
 
 ---
 

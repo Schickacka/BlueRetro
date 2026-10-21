@@ -302,7 +302,7 @@ menu "BlueRetro"
 
         config BR_PS1_BATTERY_IND
             bool "Low battery amber pulse indicator"
-            default n
+            default y
             help
                 Pulses amber LED every 30 seconds when controller battery level <= 20% and not charging.
 
