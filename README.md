@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.6.3)
+# BlueRetro — PlayStation 1 Custom Edition (v0.6.4)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -20,6 +20,15 @@
 O **BlueRetro — PlayStation 1 Custom Edition** é um firmware customizado de alta precisão para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** voltado ao console **Sony PlayStation 1** (compatível com todas as revisões de hardware: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
 
 Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi desenvolvida e mantida por **Schickacka** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200), robustez de concorrência em tempo real e estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
+
+---
+
+## Novidades e Correções da Versão 0.6.4
+
+* **Desativação Padrão do Indicador de Bateria (`CONFIG_BR_PS1_BATTERY_IND=n`):** O indicador luminoso de bateria fraca foi desativado por padrão no build oficial. A transmissão de relatórios de LED dedicados à bateria no DualShock 4 / DualSense utilizava `conf1 = 0x03` com valores de motor zerados, o que causava interrupções indevidas no rumble durante partidas intensas. A leitura interna e o gerenciamento de bateria permanecem funcionando normalmente no próprio controle.
+* **Correção no Temporizador de Inicialização do Switch / 8BitDo (`sw.c`):** Corrigida falha no callback `bt_hid_sw_init_callback()`, onde o timer era deletado prematuramente antes da chamada `esp_timer_start_once(device->timer_hdl, 100000)` com ponteiro nulo (`ESP_ERR_INVALID_ARG`), impedindo retentativas em caso de perda de pacotes de handshake. O timer ativo agora é preservado e reiniciado com segurança.
+* **Guarda Analógica Reforçada em Hotplug e Reset do Console (`analog_lock`):** A trava de liberação do botão PS/Home foi reforçada para ser rearmada na inicialização da porta (`ps_spi_port_cfg`) e durante o reset ocioso caso o botão físico ainda esteja mantido pressionado (`output[18] != 0`), impedindo alternâncias espúrias e involuntárias para o modo analógico (`0x73`) ao ligar ou resetar o console.
+* **Preservação Integral do Comportamento Validado:** Mantido o boot em modo digital (`0x41`), a comutação de analógico exclusivamente no release do botão PS/Home, o rumble ativo em modo digital (`dev_type != DEV_PS2_DS2`), o chaveamento automático de analógico pelos jogos (`0x44`) e a desativação do Memory Card Virtual (`CONFIG_BR_PS1_MEMORY_CARD=n`).
 
 ---
 
@@ -158,7 +167,7 @@ Configuração padrão dos pinos de conexão entre a placa **ESP32 DevKit V1** e
 ### Método 1: Atualização Sem Fio via Bluetooth (OTA - Recomendado)
 Se o BlueRetro já estiver instalado no console, o procedimento pode ser realizado sem abrir o videogame e sem cabos:
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.5.1_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.6.4_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -167,7 +176,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.5.1_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.6.4_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)

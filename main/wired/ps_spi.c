@@ -1207,6 +1207,7 @@ void ps_spi_port_cfg(uint16_t mask) {
                     ps_ctrl_ports[i].rumble_l_idx[j] = 1;
                     ps_ctrl_ports[i].rumble_r_val[j] = 0;
                     ps_ctrl_ports[i].rumble_l_val[j] = 0;
+                    ps_ctrl_ports[i].analog_lock[j] = 1;
                 }
                 ps_ctrl_ports[i].pkt_cnt = 0;
                 ps_ctrl_ports[i].last_pkt_cnt = 0;
@@ -1232,6 +1233,9 @@ void ps_spi_port_cfg(uint16_t mask) {
                 memset(ps_ctrl_ports[i].pend_dev_id, 0x41, sizeof(ps_ctrl_ports[0].pend_dev_id));
                 memset(ps_ctrl_ports[i].dev_desc, 0, sizeof(ps_ctrl_ports[0].dev_desc));
                 memset(ps_ctrl_ports[i].analog_btn, 0, sizeof(ps_ctrl_ports[0].analog_btn));
+                for (uint32_t j = 0; j < MT_PORT_MAX; j++) {
+                    ps_ctrl_ports[i].analog_lock[j] = 1;
+                }
                 gpio_set_level_iram(ps_ctrl_ports[i].led_pin, 0);
                 set_output_state(i, 0);
             }
@@ -1287,13 +1291,22 @@ void ps_spi_poll(void) {
         if (port->spi_active && !console_bus_alive) {
             port->spi_active = 0;
             for (uint32_t j = 0; j < dev_count; j++) {
+                /*
+                 * After a console reset the PS/Home button may still be held.
+                 * Re-arm the release guard for every mode, including 0x41;
+                 * otherwise the release event would switch a freshly reset
+                 * digital pad to 0x73.
+                 */
+                uint8_t analog_held =
+                    wired_adapter.data[port->mt_first_port + j].output[18] != 0;
+                port->analog_btn[j] = 0;
+                port->analog_lock[j] = analog_held ? 1 : 0;
+
                 if (port->dev_id[j] == 0x73 || port->dev_id[j] == 0x79 || port->dev_id[j] == 0xF3) {
                     struct raw_fb fb_data = {0};
                     port->dev_id[j] = 0x41;
                     port->pend_dev_id[j] = 0x41;
                     port->dev_desc[j] = 0;
-                    port->analog_btn[j] = 0;
-                    port->analog_lock[j] = 1;
                     port->rumble_r_state[j] = 0;
                     port->rumble_l_state[j] = 0;
                     port->rumble_r_val[j] = 0;

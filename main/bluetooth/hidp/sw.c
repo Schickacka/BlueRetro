@@ -233,12 +233,15 @@ static void bt_hid_sw_exec_next_state(struct bt_dev *device) {
 static void bt_hid_sw_init_callback(void *arg) {
     struct bt_dev *device = (struct bt_dev *)arg;
     bt_host_tx_lock();
-    /* Always release the one-shot timer, even if the device changed type. */
-    if (device && device->timer_hdl) {
-        esp_timer_delete(device->timer_hdl);
-        device->timer_hdl = NULL;
-    }
     if (!device || device->ids.type != BT_SW) {
+        /*
+         * The device was reused for another type while this one-shot was
+         * pending. Release the stale timer before returning.
+         */
+        if (device && device->timer_hdl) {
+            esp_timer_delete(device->timer_hdl);
+            device->timer_hdl = NULL;
+        }
         bt_host_tx_unlock();
         return;
     }
@@ -258,7 +261,9 @@ static void bt_hid_sw_init_callback(void *arg) {
     }
     bt_hid_sw_exec_next_state(device);
 
-    esp_timer_start_once(device->timer_hdl, 100000);
+    if (device->timer_hdl) {
+        esp_timer_start_once(device->timer_hdl, 100000);
+    }
 
     atomic_set_bit(&device->flags, BT_DEV_HID_INIT_DONE);
 }
