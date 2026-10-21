@@ -233,6 +233,11 @@ static void bt_hid_sw_exec_next_state(struct bt_dev *device) {
 static void bt_hid_sw_init_callback(void *arg) {
     struct bt_dev *device = (struct bt_dev *)arg;
     bt_host_tx_lock();
+    /* Always release the one-shot timer, even if the device changed type. */
+    if (device && device->timer_hdl) {
+        esp_timer_delete(device->timer_hdl);
+        device->timer_hdl = NULL;
+    }
     if (!device || device->ids.type != BT_SW) {
         bt_host_tx_unlock();
         return;
@@ -242,7 +247,7 @@ static void bt_hid_sw_init_callback(void *arg) {
     if (device->hid_retry_cnt++ > SW_INIT_STATE_RETRY_MAX) {
         if (device->hid_state == SW_INIT_STATE_SET_LED) {
             if (device->timer_hdl) {
-                if (device->timer_hdl) { esp_timer_delete(device->timer_hdl); device->timer_hdl = NULL; }
+                esp_timer_delete(device->timer_hdl);
                 device->timer_hdl = NULL;
             }
             bt_host_tx_unlock();
@@ -260,6 +265,9 @@ static void bt_hid_sw_init_callback(void *arg) {
 
 void bt_hid_sw_init(struct bt_dev *device) {
 #ifndef CONFIG_BLUERETRO_TEST_FALLBACK_REPORT
+    if (device->timer_hdl) {
+        return;
+    }
     struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
     struct bt_hidp_sw_conf *set_conf = (struct bt_hidp_sw_conf *)bt_data->base.output;
 

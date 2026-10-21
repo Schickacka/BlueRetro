@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.6)
+# BlueRetro — PlayStation 1 Custom Edition (v0.6.1)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -23,7 +23,15 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 
 ---
 
-## Novidades e Correções da Versão 0.6
+## Novidades e Correções da Versão 0.6.1
+
+* **Correção do Relatório Bluetooth 0x31 do DualSense (PS5):** Implementação exata da especificação oficial do relatório Bluetooth do DualSense (`struct bt_hidp_ps5_set_conf` de 78 bytes com `report ID 0x31`): contador incremental de sequência de saída (`seq_tag`), tag obrigatória `0x10`, ajuste do padding reservado para 23 bytes (mantendo alinhamento preciso do CRC32 nos offsets 73..76).
+* **Proteção de Vibração em Controles Digitais:** Bloqueio de comandos de vibração (0x42) quando a porta estiver identificada como controle digital padrão (`0x41`), mantendo a integridade do protocolo SPI do PS1 e preservando a liberação de vibração sem exigência da flag `acc_mode` para controles analógicos/DualShock (`0x73`, `0x79`, `0xF3`).
+* **Trava Analógica no Reset do Console (`analog_lock`):** Prevenção de comutação indesejada para modo analógico caso o botão PS / analógico esteja pressionado durante o Reset do console; o controle aguarda a liberação física do botão antes de permitir nova alternância.
+* **Prevenção de Vazamento de Temporizadores (`esp_timer`):** Cancelamento seguro e desalocação de temporizadores pendentes de inicialização em desconexões rápidas (`host.c`, `ps3.c`, `sw.c`, `ps.c`), eliminando callbacks executando sobre estruturas recicladas.
+* **Preservação das Configurações de Acessórios:** Remoção do laço de reinicialização forçada em `ps_spi.c` que sobrepunha as opções de acessórios configuradas pelo usuário (`ACC_BOTH`, `ACC_NONE`, etc.).
+* **Correção Cromática do Modo Noturno e Indicação de Bateria:** Correção da ordenação de bytes no cálculo de cor do modo noturno (`0x00BBGGRR`), preservando matriz cromática para qualquer cor selecionada, e pulso âmbar suave a cada 30 segundos em níveis críticos de bateria (<20%).
+* **Robustez e Integridade do Memory Card Virtual:** Correção do tamanho de blocos para `MC_BUFFER_BLOCK_SIZE` (4096 bytes), inicialização limpa com `0xFF` (padrão de cartão virgem PlayStation), checagem estrita de limites (*bounds checking*), tratamento de re-tentativa para blocos pendentes de gravação e alocação dinâmica protegida em `mc_init_mem`.
 
 * **Suporte Nativo aos LEDs de Jogador do DualSense (PS5):** Mapeamento nativo dos LEDs indicadores de jogador do DualSense para identificação da porta do console (Portas 1 a 4). A barra de luz RGB do DualSense segue a identidade visual do PlayStation 1: cinza suave (`#101010`) em modo Digital e vermelho clássico SCPH-1200 (`#6D0000`) em modo Analógico. O DualSense não pisca em azul na conexão (a porta já é indicada pelos LEDs dedicados), mas mantém o pulso tátil de conexão de 150 ms.
 * **Correção Estrutural do Relatório HID do DualSense (77 Bytes):** Reestruturação do pacote HID 0x02 para 77 bytes com flags calibradas (`conf1 = 0x14`, `valid_flag2 = 0x02`, `lightbar_setup = 0x02`) e remoção do campo `use_accurate_rumble` que causava deslocamento de offsets no payload, restabelecendo a operação plena de vibração e iluminação.

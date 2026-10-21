@@ -284,6 +284,12 @@ static void bt_att_cmd_mc_rd_rsp(uint16_t handle, uint8_t blob) {
     uint32_t block = mc_offset / 4096 + 1;
     printf("# %s\n", __FUNCTION__);
 
+    if (!mc_get_ready() || mc_offset >= MC_BUFFER_SIZE) {
+        bt_att_cmd_error_rsp(handle, blob ? BT_ATT_OP_READ_BLOB_REQ : BT_ATT_OP_READ_REQ,
+            BR_MC_DATA_CHRC_HDL, BT_ATT_ERR_INVALID_OFFSET);
+        return;
+    }
+
     len = (block * 4096) - mc_offset;
 
     if (len > (mtu - 2)) {
@@ -742,10 +748,29 @@ void bt_att_cfg_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, u
                     bt_att_cmd_wr_rsp(device->acl_handle);
                     break;
                 case BR_MC_CTRL_CHRC_HDL:
-                    mc_offset = *(uint32_t *)wr_req->value;
+                {
+                    uint32_t new_offset = 0;
+                    if (data_len < sizeof(new_offset)) {
+                        bt_att_cmd_error_rsp(device->acl_handle, BT_ATT_OP_WRITE_REQ,
+                            wr_req->handle, BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
+                        break;
+                    }
+                    memcpy(&new_offset, wr_req->value, sizeof(new_offset));
+                    if (new_offset > MC_BUFFER_SIZE) {
+                        bt_att_cmd_error_rsp(device->acl_handle, BT_ATT_OP_WRITE_REQ,
+                            wr_req->handle, BT_ATT_ERR_INVALID_OFFSET);
+                        break;
+                    }
+                    mc_offset = new_offset;
                     bt_att_cmd_wr_rsp(device->acl_handle);
                     break;
+                }
                 case BR_MC_DATA_CHRC_HDL:
+                    if (!mc_get_ready() || mc_offset > MC_BUFFER_SIZE || data_len > (MC_BUFFER_SIZE - mc_offset)) {
+                        bt_att_cmd_error_rsp(device->acl_handle, BT_ATT_OP_WRITE_REQ,
+                            wr_req->handle, BT_ATT_ERR_INVALID_OFFSET);
+                        break;
+                    }
                     mc_write(mc_offset, wr_req->value, data_len);
                     mc_offset += data_len;
                     bt_att_cmd_wr_rsp(device->acl_handle);
@@ -772,6 +797,11 @@ void bt_att_cfg_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, u
                     bt_att_cmd_prep_wr_rsp(device->acl_handle, bt_hci_acl_pkt->att_data, att_len);
                     break;
                 case BR_MC_DATA_CHRC_HDL:
+                    if (!mc_get_ready() || mc_offset > MC_BUFFER_SIZE || data_len > (MC_BUFFER_SIZE - mc_offset)) {
+                        bt_att_cmd_error_rsp(device->acl_handle, BT_ATT_OP_PREPARE_WRITE_REQ,
+                            prep_wr_req->handle, BT_ATT_ERR_INVALID_OFFSET);
+                        break;
+                    }
                     mc_write(mc_offset, prep_wr_req->value, data_len);
                     mc_offset += data_len;
                     bt_att_cmd_prep_wr_rsp(device->acl_handle, bt_hci_acl_pkt->att_data, att_len);

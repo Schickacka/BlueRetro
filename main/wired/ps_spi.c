@@ -148,6 +148,7 @@ struct ps_ctrl_port {
     volatile uint8_t rumble_r_val[MT_PORT_MAX];
     volatile uint8_t rumble_l_val[MT_PORT_MAX];
     volatile uint8_t analog_btn[MT_PORT_MAX];
+    volatile uint8_t analog_lock[MT_PORT_MAX]; /* ignore button until released after reset */
     volatile uint32_t dev_desc[MT_PORT_MAX];
     volatile uint32_t idx;
     volatile uint32_t mt_idx;
@@ -291,11 +292,17 @@ static void ps_analog_btn_hdlr(struct ps_ctrl_port *port, uint8_t id) {
             && port->dev_type[id] != DEV_PSX_PS_2_KB_MOUSE_ADAPTER
             && (port->dev_id[id] == 0x41 || port->dev_id[id] == 0x73)) {
         if (wired_adapter.data[id + port->mt_first_port].output[18]) {
-            if (!port->analog_btn[id]) {
+            /*
+             * After a console reset the button may still be physically held.
+             * Do not arm a new toggle until it has been released, otherwise
+             * the release event would switch a freshly reset pad to 0x73.
+             */
+            if (!port->analog_btn[id] && !port->analog_lock[id]) {
                 port->analog_btn[id] = 1;
             }
         }
         else {
+            port->analog_lock[id] = 0;
             if (port->analog_btn[id]) {
                 struct raw_fb fb_data = {0};
                 port->analog_btn[id] = 0;
@@ -339,6 +346,15 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
     switch (cmd) {
         case 0x42:
         {
+            /*
+             * A digital pad (0x41) has no rumble actuators and must not emit
+             * feedback even if a game sends command 0x42 to it. The acc_mode
+             * gate is intentionally NOT restored here: this fork deliberately
+             * keeps rumble active regardless of ACC_RUMBLE/ACC_MEM.
+             */
+            if (port->dev_id[id] != 0x73 && port->dev_id[id] != 0x79 && port->dev_id[id] != 0xF3) {
+                break;
+            }
             req++;
             if (req[port->rumble_r_idx[id]] != port->rumble_r_val[id]
                         || req[port->rumble_l_idx[id]] != port->rumble_l_val[id]) {
@@ -1084,14 +1100,17 @@ inner_break:
             ps_ctrl_ports[i].rumble_l_state[j] = 1;
             ps_ctrl_ports[i].rumble_r_idx[j] = 0;
             ps_ctrl_ports[i].rumble_l_idx[j] = 1;
+            ps_ctrl_ports[i].analog_btn[j] = 0;
+            ps_ctrl_ports[i].analog_lock[j] = 1;
         }
     }
 
-    for (uint32_t i = 0; i < WIRED_MAX_DEV; i++) {
-        if (!(config.out_cfg[i].acc_mode & ACC_MEM)) {
-            config.out_cfg[i].acc_mode = ACC_RUMBLE;
-        }
-    }
+    /*
+     * Do not overwrite the user's per-port accessory configuration here.
+     * The previous loop forced every non-ACC_MEM port to ACC_RUMBLE, which
+     * silently converted ACC_BOTH and ACC_NONE back to ACC_RUMBLE on every
+     * boot. Defaults are already initialized to ACC_RUMBLE in config.c.
+     */
 
     /* DTR */
     ps_spi_port_cfg(0x0);
@@ -1270,6 +1289,8 @@ void ps_spi_poll(void) {
                     port->dev_id[j] = 0x41;
                     port->pend_dev_id[j] = 0x41;
                     port->dev_desc[j] = 0;
+                    port->analog_btn[j] = 0;
+                    port->analog_lock[j] = 1;
                     port->rumble_r_state[j] = 0;
                     port->rumble_l_state[j] = 0;
                     port->rumble_r_val[j] = 0;

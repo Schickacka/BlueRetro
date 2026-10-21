@@ -163,6 +163,116 @@ static struct ps4_blink_ctx ps4_blink_ctxs[BT_MAX_DEV] = {0};
 static struct ps_conn_rumble_ctx ps_conn_rumble_ctxs[BT_MAX_DEV] = {0};
 static void ps_start_player_rumble(struct bt_dev *device);
 
+#if defined(CONFIG_BR_PS1_BATTERY_IND) && CONFIG_BR_PS1_BATTERY_IND
+#define PS1_BATT_POLL_TICKS  3000 /* 3000 * 10 ms = 30 s */
+#define PS1_BATT_PULSE_TICKS 50   /* 50 * 10 ms = 500 ms */
+
+struct ps_batt_ctx {
+    bool valid;
+    bool charging;
+    uint8_t level;
+    uint16_t tick_cnt;
+    uint8_t pulse_tick;
+    bool pulse;
+};
+
+static struct ps_batt_ctx ps_batt_ctxs[BT_MAX_DEV] = {0};
+
+static uint8_t ps_is_analog_for_dev(struct bt_dev *device) {
+    if (wired_adapter.system_id == PSX || wired_adapter.system_id == PS2) {
+        return ps_spi_is_analog(device->ids.out_idx);
+    }
+    return 0;
+}
+
+static void ps_send_led_only(struct bt_dev *device, uint32_t color) {
+    if (device->ids.subtype == BT_PS5_DS) {
+        struct bt_hidp_ps5_set_conf set_conf = {0};
+
+        set_conf.conf0 = 0x02;      /* overwritten with seq_tag by the wrapper */
+        set_conf.cmd = 0x00;        /* no vibration flags: LED-only report */
+        set_conf.conf1 = 0x14;      /* lightbar + player indicator enable */
+        set_conf.valid_flag2 = 0x02;
+        set_conf.lightbar_setup = 0x02;
+        set_conf.led_brightness = ps1_led_brightness();
+        set_conf.player_leds = bt_hidp_ps5_player_led(device->ids.out_idx);
+        set_conf.leds = color;
+        bt_hid_cmd_ps5_set_conf(device, (void *)&set_conf);
+    }
+    else {
+        struct bt_hidp_ps4_set_conf set_conf = {0};
+
+        set_conf.conf0 = 0xc4;
+        set_conf.conf1 = 0x03;
+        set_conf.leds = color;
+        bt_hid_cmd_ps4_set_conf(device, (void *)&set_conf);
+    }
+}
+
+void ps_battery_update(uint8_t dev_id, uint8_t level, bool charging) {
+    if (dev_id >= BT_MAX_DEV) {
+        return;
+    }
+    struct ps_batt_ctx *ctx = &ps_batt_ctxs[dev_id];
+
+    ctx->valid = true;
+    ctx->level = level;
+    ctx->charging = charging;
+
+    /* Unknown level (255) or healthy battery: cancel any pending pulse. */
+    if (level == 255 || level > 20 || charging) {
+        ctx->pulse = false;
+        ctx->pulse_tick = 0;
+        ctx->tick_cnt = 0;
+    }
+}
+
+bool ps1_battery_pulse_active(uint8_t dev_id) {
+    if (dev_id >= BT_MAX_DEV) {
+        return false;
+    }
+    struct ps_batt_ctx *ctx = &ps_batt_ctxs[dev_id];
+    return ctx->valid && ctx->pulse;
+}
+
+static void ps_battery_tick(struct bt_dev *device) {
+    uint8_t dev_id = device->ids.id;
+    if (dev_id >= BT_MAX_DEV) {
+        return;
+    }
+    struct ps_batt_ctx *ctx = &ps_batt_ctxs[dev_id];
+    if (!ctx->valid || ctx->level > 20 || ctx->charging) {
+        return;
+    }
+
+    if (!ctx->pulse) {
+        if (++ctx->tick_cnt >= PS1_BATT_POLL_TICKS) {
+            ctx->tick_cnt = 0;
+            ctx->pulse = true;
+            ctx->pulse_tick = 0;
+            ps_send_led_only(device, ps1_battery_color());
+        }
+    }
+    else {
+        if (++ctx->pulse_tick >= PS1_BATT_PULSE_TICKS) {
+            ctx->pulse = false;
+            ps_send_led_only(device, ps1_led_color(ps_is_analog_for_dev(device)));
+        }
+    }
+}
+#else
+void ps_battery_update(uint8_t dev_id, uint8_t level, bool charging) {
+    (void)dev_id;
+    (void)level;
+    (void)charging;
+}
+
+bool ps1_battery_pulse_active(uint8_t dev_id) {
+    (void)dev_id;
+    return false;
+}
+#endif
+
 uint8_t ps4_is_breathing(uint8_t dev_id) {
     if (dev_id < BT_MAX_DEV) {
         return ps4_blink_ctxs[dev_id].active;
@@ -184,6 +294,9 @@ void ps4_blink_stop(uint8_t dev_id) {
         ps_conn_rumble_ctxs[dev_id].active = false;
         ps_conn_rumble_ctxs[dev_id].device = NULL;
         ps_conn_rumble_ctxs[dev_id].tick_cnt = 0;
+#if defined(CONFIG_BR_PS1_BATTERY_IND) && CONFIG_BR_PS1_BATTERY_IND
+        memset(&ps_batt_ctxs[dev_id], 0, sizeof(ps_batt_ctxs[dev_id]));
+#endif
     }
 }
 
@@ -218,14 +331,15 @@ static void bt_hid_ps5_init_callback(void *arg) {
     struct bt_dev *device = (struct bt_dev *)arg;
     bt_host_tx_lock();
 
+    /* Always release the one-shot timer, even if the device changed type. */
+    if (device && device->timer_hdl) {
+        esp_timer_delete(device->timer_hdl);
+        device->timer_hdl = NULL;
+    }
+
     if (!device || device->ids.type != BT_PS) {
         bt_host_tx_unlock();
         return;
-    }
-
-    if (device->timer_hdl) {
-        esp_timer_delete(device->timer_hdl);
-        device->timer_hdl = NULL;
     }
 
     if (device->ids.subtype == BT_PS5_DS || device->ids.report_type == BT_HIDP_PS5_STATUS) {
@@ -298,6 +412,9 @@ static void bt_hid_ps5_init_callback(void *arg) {
 }
 
 static void bt_hid_cmd_ps5_set_conf(struct bt_dev *device, void *report) {
+    static uint8_t output_seq[BT_MAX_DEV] = {0};
+    uint8_t seq_idx = (device->ids.id < BT_MAX_DEV) ? device->ids.id : 0;
+
     bt_host_tx_lock();
     struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_hid_pkt_tmp.hidp_data;
 
@@ -305,6 +422,16 @@ static void bt_hid_cmd_ps5_set_conf(struct bt_dev *device, void *report) {
     bt_hid_pkt_tmp.hidp_hdr.protocol = BT_HIDP_PS5_SET_CONF;
 
     memcpy((void *)set_conf, report, sizeof(*set_conf));
+
+    /*
+     * Bluetooth output report 0x31 (78 bytes incl. report ID):
+     *   payload[0] = seq_tag: sequence in the high nibble, low nibble 0
+     *   payload[1] = tag 0x10
+     * USB report 0x02 does not carry these two bytes, but this firmware
+     * only sends feedback over the Bluetooth interrupt channel.
+     */
+    set_conf->conf0 = (output_seq[seq_idx]++ & 0x0F) << 4;
+    set_conf->tag = 0x10;
 
     set_conf->crc = crc32_le((uint32_t)~0xFFFFFFFF, (void *)&bt_hid_pkt_tmp.hidp_hdr,
         sizeof(bt_hid_pkt_tmp.hidp_hdr) + sizeof(*set_conf) - sizeof(set_conf->crc));
@@ -434,6 +561,15 @@ void bt_hid_ps_tick(void) {
                 }
             }
         }
+
+#if defined(CONFIG_BR_PS1_BATTERY_IND) && CONFIG_BR_PS1_BATTERY_IND
+        /* 3. Low-battery amber pulse (best effort, every 30 s) */
+        struct bt_dev *batt_dev = NULL;
+        if (bt_host_get_dev_from_id(i, &batt_dev) == 0 && batt_dev
+                && atomic_test_bit(&batt_dev->flags, BT_DEV_HID_INIT_DONE)) {
+            ps_battery_tick(batt_dev);
+        }
+#endif
     }
 }
 
@@ -506,8 +642,8 @@ void bt_hid_ps_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, ui
                         .conf0 = 0xc4,
                         .conf1 = 0x03,
                     };
-                    rumble4.r_rumble = bt_hci_acl_pkt->hidp_data[10];
-                    rumble4.l_rumble = bt_hci_acl_pkt->hidp_data[9];
+                    rumble4.hf_motor_pwr = bt_hci_acl_pkt->hidp_data[10];
+                    rumble4.lf_motor_pwr = bt_hci_acl_pkt->hidp_data[9];
                     bt_hid_cmd_ps4_set_conf(device, &rumble4);
 #else
                     bt_host_bridge(device, bt_hci_acl_pkt->hidp_hdr.protocol, bt_hci_acl_pkt->hidp_data, hidp_data_len);
@@ -523,8 +659,8 @@ void bt_hid_ps_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, ui
                         .conf0 = 0x02,
                         .cmd = 0x03,
                     };
-                    rumble.r_rumble = bt_hci_acl_pkt->hidp_data[6];
-                    rumble.l_rumble = bt_hci_acl_pkt->hidp_data[5];
+                    rumble.hf_motor_pwr = bt_hci_acl_pkt->hidp_data[6];
+                    rumble.lf_motor_pwr = bt_hci_acl_pkt->hidp_data[5];
                     bt_hid_cmd_ps5_set_conf(device, &rumble);
 #else
                     bt_host_bridge(device, bt_hci_acl_pkt->hidp_hdr.protocol, bt_hci_acl_pkt->hidp_data, hidp_data_len);

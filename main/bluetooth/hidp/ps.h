@@ -7,6 +7,7 @@
 #define _BT_HIDP_PS_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "hidp.h"
 
 #define BT_HIDP_HID_STATUS 0x01
@@ -52,8 +53,9 @@ struct bt_hidp_ps4_set_conf_usb {
 
 #define BT_HIDP_PS5_SET_CONF 0x31
 struct bt_hidp_ps5_set_conf {
-    uint8_t conf0;
-    uint8_t cmd;
+    uint8_t conf0;      /* Bluetooth seq_tag: high nibble = sequence, low nibble = 0 */
+    uint8_t tag;        /* Bluetooth output report tag, must be 0x10 */
+    uint8_t cmd;        /* valid_flag0 */
     uint8_t conf1;
     uint8_t hf_motor_pwr;
     uint8_t lf_motor_pwr;
@@ -94,7 +96,12 @@ struct bt_hidp_ps5_set_conf {
         };
         uint32_t leds;
     };
-    uint8_t tbd8[24];
+    /*
+     * 23 bytes, not 24: the 4th byte of the RGB union (led_delay) already
+     * occupies the first byte of the 24-byte reserved area of the official
+     * 78-byte Bluetooth report (77-byte HIDP payload + report ID).
+     */
+    uint8_t tbd8[23];
     uint32_t crc;
 } __packed;
 
@@ -113,10 +120,15 @@ struct bt_hidp_ps5_set_conf {
 static inline uint32_t ps1_led_color(uint8_t is_analog) {
 #ifdef CONFIG_BR_PS1_NIGHT_MODE
     uint32_t c = is_analog ? BR_PS1_COLOR_ANALOG : BR_PS1_COLOR_DIGITAL;
-    uint8_t r = ((c >> 16) & 0xFF) / 2;
+    /*
+     * The report union is little-endian: low byte = red, middle = green,
+     * high byte = blue. Halve the bytes in place so arbitrary user colors
+     * keep their hue in night mode.
+     */
+    uint8_t r = (c & 0xFF) / 2;
     uint8_t g = ((c >> 8) & 0xFF) / 2;
-    uint8_t b = (c & 0xFF) / 2;
-    return (r << 16) | (g << 8) | b;
+    uint8_t b = ((c >> 16) & 0xFF) / 2;
+    return (b << 16) | (g << 8) | r;
 #else
     return is_analog ? BR_PS1_COLOR_ANALOG : BR_PS1_COLOR_DIGITAL;
 #endif
@@ -138,6 +150,21 @@ static inline uint8_t ps1_blink_brightness_max(void) {
 #endif
 }
 
+/*
+ * Lightbar values are stored in the little-endian DS4/DS5 report union:
+ * byte 0 = red, byte 1 = green, byte 2 = blue. Therefore the numeric
+ * constant is 0x00BBGGRR, not 0x00RRGGBB. Amber = R=0xFF, G=0x80, B=0x00.
+ */
+#define PS1_BATTERY_AMBER 0x000080FF
+
+static inline uint32_t ps1_battery_color(void) {
+#ifdef CONFIG_BR_PS1_NIGHT_MODE
+    return 0x0000407F; /* ~50% amber for night mode */
+#else
+    return PS1_BATTERY_AMBER;
+#endif
+}
+
 static inline uint8_t bt_hidp_ps5_player_led(uint8_t out_idx) {
     static const uint8_t ps5_player_masks[] = { 0x04, 0x0A, 0x15, 0x1B, 0x1F };
     if (out_idx < sizeof(ps5_player_masks)) {
@@ -148,6 +175,8 @@ static inline uint8_t bt_hidp_ps5_player_led(uint8_t out_idx) {
 
 void bt_hid_cmd_ps_set_conf(struct bt_dev *device, void *report);
 void bt_hid_ps_init(struct bt_dev *device);
+void ps_battery_update(uint8_t dev_id, uint8_t level, bool charging);
+bool ps1_battery_pulse_active(uint8_t dev_id);
 void bt_hid_ps_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, uint32_t len);
 uint8_t ps4_is_breathing(uint8_t dev_id);
 void ps4_set_pending_led(uint8_t dev_id, uint32_t color);

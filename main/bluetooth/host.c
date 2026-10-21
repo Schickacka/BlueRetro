@@ -580,6 +580,16 @@ void bt_host_reset_dev(struct bt_dev *device) {
 reset_dev:
     bt_host_tx_lock();
     ps4_blink_stop(dev_id);
+    /*
+     * A one-shot init timer (PS3/PS4-PS5/Switch) may still be pending when
+     * the controller disconnects. Free it before memset() clears timer_hdl;
+     * otherwise the timer leaks and fires later against a recycled bt_dev.
+     */
+    if (device->timer_hdl) {
+        esp_timer_stop(device->timer_hdl);
+        esp_timer_delete(device->timer_hdl);
+        device->timer_hdl = NULL;
+    }
     adapter_init_buffer(dev_id);
     memset(bt_adapter.data[dev_id].raw_src_mappings, 0, sizeof(*bt_adapter.data[0].raw_src_mappings) * REPORT_MAX);
     memset(bt_adapter.data[dev_id].reports, 0, sizeof(bt_adapter.data[0].reports));

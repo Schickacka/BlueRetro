@@ -48,6 +48,9 @@ static int32_t mc_restore(void) {
 
     if (stat(MEMORY_CARD_FILE, &st) != 0) {
         printf("# %s: No Memory Card on FS. Creating...\n", __FUNCTION__);
+        for (uint32_t i = 0; i < MC_BUFFER_BLOCK_CNT; i++) {
+            memset((void *)mc_buffer[i], 0xFF, MC_BUFFER_BLOCK_SIZE);
+        }
         ret = mc_store();
     }
     else {
@@ -57,7 +60,7 @@ static int32_t mc_restore(void) {
         }
         else {
             for (uint32_t i = 0; i < MC_BUFFER_BLOCK_CNT; i++) {
-                uint32_t count = fread((void *)mc_buffer[i], MC_BLOCK_SIZE, 1, file);
+                uint32_t count = fread((void *)mc_buffer[i], MC_BUFFER_BLOCK_SIZE, 1, file);
                 if (count != 1) {
                     printf("# %s: failed to read file %ld\n", __FUNCTION__, i);
                     ret = -1;
@@ -80,7 +83,7 @@ static int32_t mc_store(void) {
     }
     else {
         for (uint32_t i = 0; i < MC_BUFFER_BLOCK_CNT; i++) {
-            uint32_t count = fwrite((void *)mc_buffer[i], MC_BLOCK_SIZE, 1, file);
+            uint32_t count = fwrite((void *)mc_buffer[i], MC_BUFFER_BLOCK_SIZE, 1, file);
             if (count != 1) {
                 printf("# %s: failed to write file %ld\n", __FUNCTION__, i);
                 ret = -1;
@@ -104,14 +107,16 @@ static int32_t mc_store_spread(void) {
         ret = -1;
     }
     else {
-        fseek(file, block * MC_BLOCK_SIZE, SEEK_SET);
-        uint32_t count = fwrite((void *)mc_buffer[block], MC_BLOCK_SIZE, 1, file);
+        fseek(file, block * MC_BUFFER_BLOCK_SIZE, SEEK_SET);
+        uint32_t count = fwrite((void *)mc_buffer[block], MC_BUFFER_BLOCK_SIZE, 1, file);
         if (count != 1) {
             printf("# %s: failed to write block %ld\n", __FUNCTION__, block);
             ret = -1;
         }
+        else {
+            atomic_clear_bit(&mc_block_state, block);
+        }
         fclose(file);
-        atomic_clear_bit(&mc_block_state, block);
     }
 
     return ret;
@@ -124,13 +129,22 @@ static inline void mc_store_cb(void *arg) {
     }
 }
 
+int32_t mc_init_mem(void) {
+    for (uint32_t i = 0; i < MC_BUFFER_BLOCK_CNT; i++) {
+        mc_buffer[i] = heap_caps_malloc(MC_BUFFER_BLOCK_SIZE, MALLOC_CAP_DMA);
+        if (mc_buffer[i] == NULL) {
+            printf("# %s: failed to alloc block %ld\n", __FUNCTION__, i);
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int32_t mc_init(void) {
     int32_t ret = -1;
 
-    for (uint32_t i = 0; i < MC_BUFFER_BLOCK_CNT; i++) {
-        mc_buffer[i] = heap_caps_malloc(MC_BLOCK_SIZE, MALLOC_CAP_DMA);
-        if (mc_buffer[i] == NULL) {
-            printf("# %s: failed to alloc block %ld\n", __FUNCTION__, i);
+    if (mc_buffer[0] == NULL) {
+        if (mc_init_mem() != 0) {
             goto inc_init_fail;
         }
     }
@@ -158,16 +172,22 @@ void mc_storage_update(void) {
 }
 
 void IRAM_ATTR mc_read(uint32_t addr, uint8_t *data, uint32_t size) {
+    if (addr >= MC_BUFFER_SIZE || size > (MC_BUFFER_SIZE - addr)) {
+        return;
+    }
     memcpy(data, mc_buffer[addr >> 12] + (addr & 0xFFF), size);
 }
 
 void IRAM_ATTR mc_write(uint32_t addr, uint8_t *data, uint32_t size) {
+    if (addr >= MC_BUFFER_SIZE || size > (MC_BUFFER_SIZE - addr)) {
+        return;
+    }
     struct raw_fb fb_data = {0};
     uint32_t block = addr >> 12;
 
     memcpy(mc_buffer[block] + (addr & 0xFFF), data, size);
 
-    if (config.global_cfg.banksel < CONFIG_BANKSEL_MAX) {
+    if (config.global_cfg.banksel < CONFIG_BANKSEL_MAX || config.global_cfg.banksel == 0xFF) {
         atomic_set_bit(&mc_block_state, block);
 
         fb_data.header.wired_id = 0;
@@ -178,6 +198,9 @@ void IRAM_ATTR mc_write(uint32_t addr, uint8_t *data, uint32_t size) {
 }
 
 uint8_t IRAM_ATTR *mc_get_ptr(uint32_t addr) {
+    if (addr >= MC_BUFFER_SIZE) {
+        return NULL;
+    }
     return mc_buffer[addr >> 12] + (addr & 0xFFF);
 }
 

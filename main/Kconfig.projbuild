@@ -276,15 +276,16 @@ menu "BlueRetro"
             hex "Lightbar color in Analog Mode"
             default 0x00006D
             help
-                Lightbar color (0x00RRGGBB) when analog mode is active.
-                Default is 0x00006D (#6D0000) representing authentic SCPH-1200 red with ~15% attenuation.
+                Lightbar color in the DS4/DS5 report byte order (0x00BBGGRR,
+                i.e. byte 0 = red). Default 0x00006D = R=0x6D, G=0x00,
+                B=0x00, the attenuated SCPH-1200 red (#6D0000).
 
         config BR_PS1_LED_DIGITAL_COLOR
             hex "Lightbar color in Digital Mode"
             default 0x101010
             help
-                Lightbar color (0x00RRGGBB) when digital mode is active.
-                Default is 0x101010 (#101010) representing a soft neutral grey.
+                Lightbar color in the DS4/DS5 report byte order (0x00BBGGRR,
+                i.e. byte 0 = red). Default 0x101010 = neutral grey (#101010).
 
         config BR_PS1_NIGHT_MODE
             bool "Night mode (reduced brightness)"

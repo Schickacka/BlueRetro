@@ -12,6 +12,7 @@
 #include "adapter/config.h"
 #include "tests/cmds.h"
 #include "bluetooth/mon.h"
+#include "wired/ps_spi.h"
 #include "ps.h"
 
 enum {
@@ -91,6 +92,72 @@ struct ps5_map {
     };
 } __packed;
 
+static uint8_t ps1_is_analog_for(const struct bt_data *bt_data) {
+    if (wired_adapter.system_id == PSX || wired_adapter.system_id == PS2) {
+        return ps_spi_is_analog(bt_data->base.pids->out_idx);
+    }
+    return 0;
+}
+
+#if defined(CONFIG_BR_PS1_BATTERY_IND) && CONFIG_BR_PS1_BATTERY_IND
+/*
+ * Battery/charging bits live in the controller status byte. Offsets below are
+ * relative to the HIDP payload (report ID excluded):
+ *   DS4 Bluetooth 0x11: payload[31] (report byte 32 incl. report ID)
+ *   DS5 Bluetooth 0x31: payload[53] (report byte 54 incl. report ID)
+ * DS4: low nibble = 0..10 (10% steps), 11 = full, bit 4 = cable connected.
+ * DS5: low nibble = 0..10 (10% steps), high nibble 0=discharging,
+ *      1=charging, 2=full, 0xA/0xB/0xF=error.
+ */
+static void ps1_battery_from_ds4(struct bt_data *bt_data) {
+    if (bt_data->base.input_len <= 31) {
+        return;
+    }
+    uint8_t status = bt_data->base.input[31];
+    uint8_t raw = status & 0x0F;
+    bool cable = (status & 0x10) != 0;
+    uint8_t level;
+
+    if (raw < 10) {
+        level = raw * 10 + 5;
+    }
+    else if (raw == 10 || raw == 11) {
+        level = 100;
+    }
+    else {
+        level = 255; /* 14/15: voltage/temperature/charge error: unknown */
+    }
+    ps_battery_update(bt_data->base.pids->id, level, cable || level == 255);
+}
+
+static void ps1_battery_from_ds5(struct bt_data *bt_data) {
+    if (bt_data->base.input_len <= 53) {
+        return;
+    }
+    uint8_t status = bt_data->base.input[53];
+    uint8_t raw = status & 0x0F;
+    uint8_t charge = status >> 4;
+    uint8_t level;
+
+    if (charge == 0xA || charge == 0xB || charge == 0xF) {
+        level = 255; /* voltage/temperature/charge error: unknown */
+    }
+    else if (charge == 0x2) {
+        level = 100;
+    }
+    else if (raw < 10) {
+        level = raw * 10 + 5;
+    }
+    else if (raw == 10) {
+        level = 100;
+    }
+    else {
+        level = 255; /* error/unknown */
+    }
+    ps_battery_update(bt_data->base.pids->id, level, level == 255 || charge == 0x1 || charge == 0x2);
+}
+#endif
+
 static const uint32_t ps4_mask[4] = {0xBBFF0FFF, 0x00000000, 0x00000000, 0x00000000};
 static const uint32_t ps4_desc[4] = {0x110000FF, 0x00000000, 0x00000000, 0x00000000};
 static const uint32_t ps4_btns_mask[32] = {
@@ -105,6 +172,9 @@ static const uint32_t ps4_btns_mask[32] = {
 };
 
 static void ps4_to_generic(struct bt_data *bt_data, struct wireless_ctrl *ctrl_data) {
+#if defined(CONFIG_BR_PS1_BATTERY_IND) && CONFIG_BR_PS1_BATTERY_IND
+    ps1_battery_from_ds4(bt_data);
+#endif
     struct ps4_map *map = (struct ps4_map *)bt_data->base.input;
     struct ctrl_meta *meta = bt_data->raw_src_mappings[PAD].meta;
 
@@ -149,6 +219,9 @@ static void ps4_to_generic(struct bt_data *bt_data, struct wireless_ctrl *ctrl_d
 }
 
 static void ps5_to_generic(struct bt_data *bt_data, struct wireless_ctrl *ctrl_data) {
+#if defined(CONFIG_BR_PS1_BATTERY_IND) && CONFIG_BR_PS1_BATTERY_IND
+    ps1_battery_from_ds5(bt_data);
+#endif
     struct ps5_map *map = (struct ps5_map *)bt_data->base.input;
     struct ctrl_meta *meta = bt_data->raw_src_mappings[PAD].meta;
 
@@ -248,21 +321,21 @@ static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
             }
             return false;
         case FB_TYPE_STATUS_LED:
+        {
+            uint32_t color = ps1_battery_pulse_active(bt_data->base.pids->id)
+                ? ps1_battery_color()
+                : ps1_led_color(fb_data->led);
+
             if (ps4_is_breathing(bt_data->base.pids->id)) {
-                ps4_set_pending_led(bt_data->base.pids->id, fb_data->led ? 0x00006D : 0x101010);
+                ps4_set_pending_led(bt_data->base.pids->id, color);
                 return false;
             }
             else {
-                if (fb_data->led) {
-                    /* Analog Mode ON: Red LED (SCPH-1200 style) - reduced ~15% */
-                    set_conf->leds = 0x00006D; /* RGB: R=109, G=0, B=0 */
-                }
-                else {
-                    /* Digital Mode (Analog OFF): Soft Grey / White - 50% brightness */
-                    set_conf->leds = 0x101010; /* RGB: R=16, G=16, B=16 */
-                }
+                /* Uses the Kconfig colors (analog/digital) and night mode. */
+                set_conf->leds = color;
                 return true;
             }
+        }
     }
     return false;
 }
@@ -292,7 +365,9 @@ static void ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
         case FB_TYPE_PLAYER_LED:
             break;
         case FB_TYPE_STATUS_LED:
-            set_conf->leds = ps1_led_color(fb_data->led);
+            set_conf->leds = ps1_battery_pulse_active(bt_data->base.pids->id)
+                ? ps1_battery_color()
+                : ps1_led_color(fb_data->led);
             break;
     }
 }

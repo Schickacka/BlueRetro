@@ -32,13 +32,14 @@ static void bt_hid_cmd_ps3_bt_init(struct bt_dev *device) {
 static void bt_hid_ps3_init_callback(void *arg) {
     struct bt_dev *device = (struct bt_dev *)arg;
     bt_host_tx_lock();
+    /* Always release the one-shot timer, even if the device changed type. */
+    if (device && device->timer_hdl) {
+        esp_timer_delete(device->timer_hdl);
+        device->timer_hdl = NULL;
+    }
     if (!device || device->ids.type != BT_PS3) {
         bt_host_tx_unlock();
         return;
-    }
-    if (device->timer_hdl) {
-        esp_timer_delete(device->timer_hdl);
-        device->timer_hdl = NULL;
     }
     struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
     printf("# %s\n", __FUNCTION__);
@@ -54,6 +55,9 @@ void bt_hid_cmd_ps3_set_conf(struct bt_dev *device, void *report) {
 }
 
 void bt_hid_ps3_init(struct bt_dev *device) {
+    if (device->timer_hdl) {
+        return;
+    }
     struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
     struct bt_hidp_ps3_set_conf *set_conf = (struct bt_hidp_ps3_set_conf *)bt_data->base.output;
     printf("# %s\n", __FUNCTION__);
@@ -85,14 +89,14 @@ void bt_hid_ps3_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, u
                     struct bt_hidp_ps3_set_conf rumble;
                     memcpy(&rumble, ps3_config, sizeof(rumble));
                     if (bt_hci_acl_pkt->hidp_data[17] || bt_hci_acl_pkt->hidp_data[18]) {
-                        rumble.r_rumble_pow = 0x01;
+                        rumble.hf_lf_motors_enable = 0x01;
                     }
                     if (bt_hci_acl_pkt->hidp_data[17]) {
-                        rumble.l_rumble_pow = bt_hci_acl_pkt->hidp_data[17];
-                        rumble.l_rumble_len = 0xFF;
+                        rumble.lf_motor_pwr = bt_hci_acl_pkt->hidp_data[17];
+                        rumble.lf_motor_len = 0xFF;
                     }
                     if (bt_hci_acl_pkt->hidp_data[18]) {
-                        rumble.r_rumble_len = 0xFF;
+                        rumble.hf_motor_len = 0xFF;
                     }
                     bt_hid_cmd_ps3_set_conf(device, &rumble);
 #else
