@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.6.4)
+# BlueRetro — PlayStation 1 Custom Edition (v0.6.5)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -20,6 +20,16 @@
 O **BlueRetro — PlayStation 1 Custom Edition** é um firmware customizado de alta precisão para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** voltado ao console **Sony PlayStation 1** (compatível com todas as revisões de hardware: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
 
 Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi desenvolvida e mantida por **Schickacka** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200), robustez de concorrência em tempo real e estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
+
+---
+
+## Novidades e Correções da Versão 0.6.5
+
+* **Correção Definitiva da Lightbar / LEDs de Conexão do DualSense (PS5):**
+  - **Correção do comando `lightbar_setup` (`LIGHT_ON`):** O campo `lightbar_setup` no relatório de saída Bluetooth `0x31` estava configurado como `0x02` (`DS_OUTPUT_LIGHTBAR_SETUP_LIGHT_OUT`), que comanda o microcontrolador do DualSense a apagar/esmaecer a lightbar. O valor foi corrigido para `0x01` (`DS_OUTPUT_LIGHTBAR_SETUP_LIGHT_ON`), mantendo a lightbar permanentemente acesa na cor do modo ativo.
+  - **Detecção e Inicialização Imediata na Transição DS4 -> DS5:** Ao conectar um DualSense após um DualShock 4, se o controle anunciar o nome genérico `"Wireless Controller"` no pareamento Bluetooth Classic, o BlueRetro armava um temporizador de espera de 1 segundo para o DualShock 4 e podia iniciar a máquina de estado de respiração azul (`ps4_start_player_blink`). Agora, ao receber o primeiro relatório `BT_HIDP_PS5_STATUS` (`0x31`), o driver cancela imediatamente qualquer temporizador pendente e qualquer ciclo de blink de DS4, chamando instantaneamente a inicialização nativa do DualSense (`bt_hid_ps5_init_callback`).
+  - **Restauração da Cor da Lightbar em `FB_TYPE_PLAYER_LED` e Guarda Ativa:** O tratador de `FB_TYPE_PLAYER_LED` em `ps5_fb_from_generic` não atribuía a cor da lightbar para o modo emulado (Digital/Analógico), permitindo que a barra ficasse apagada após eventos de mapeamento de porta. O tratador agora atualiza a cor corretamente e conta com uma guarda para garantir que `set_conf->leds` nunca seja transmitido como zero.
+  - **Eliminação de Pacotes Espúrios de Liberação de LEDs:** Removido o envio do pacote intermediário `ps5_clear_led` (`conf1 = 0x08`, `RELEASE_LEDS`) na fila de tarefas de feedback (`bt_fb_task`), eliminando qualquer oscilação ou desligamento transitório da lightbar durante alternâncias de status do console.
 
 ---
 
@@ -168,7 +178,7 @@ Configuração padrão dos pinos de conexão entre a placa **ESP32 DevKit V1** e
 ### Método 1: Atualização Sem Fio via Bluetooth (OTA - Recomendado)
 Se o BlueRetro já estiver instalado no console, o procedimento pode ser realizado sem abrir o videogame e sem cabos:
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.6.4_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.6.5_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -177,7 +187,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.6.4_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.6.5_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)

@@ -52,6 +52,8 @@ struct bt_hidp_ps4_set_conf_usb {
 } __packed;
 
 #define BT_HIDP_PS5_SET_CONF 0x31
+#define BT_HIDP_PS5_LIGHTBAR_SETUP_ON  0x01
+#define BT_HIDP_PS5_LIGHTBAR_SETUP_OFF 0x02
 struct bt_hidp_ps5_set_conf {
     uint8_t conf0;      /* Bluetooth seq_tag: high nibble = sequence, low nibble = 0 */
     uint8_t tag;        /* Bluetooth output report tag, must be 0x10 */
