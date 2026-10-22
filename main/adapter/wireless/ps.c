@@ -348,8 +348,8 @@ static bool ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
 
     set_conf->conf0 = 0x02;
     set_conf->conf1 = 0x14;             /* lightbar 0x04 + player indicator 0x10 */
-    set_conf->valid_flag2 = BT_HIDP_PS5_VALID_FLAG2_BRIGHTNESS | BT_HIDP_PS5_VALID_FLAG2_LIGHTBAR_SETUP;
-    set_conf->lightbar_setup = BT_HIDP_PS5_LIGHTBAR_SETUP_ON;
+    set_conf->valid_flag2 = 0x02;       /* lightbar setup enable */
+    set_conf->lightbar_setup = 0x02;
     set_conf->led_brightness = ps1_led_brightness();
     set_conf->player_leds = bt_hidp_ps5_player_led(bt_data->base.pids->out_idx);
 

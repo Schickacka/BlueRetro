@@ -117,26 +117,28 @@ static void bt_hid_cmd_ps5_trigger_init(struct bt_dev *device) {
     uint8_t l2_trigger_effect_force =
         (uint8_t)((0xb4 - l2_trigger_start_resistance) * (l2_start_resistance_value / 255.0) + l2_trigger_start_resistance);
 
-    struct bt_hidp_ps5_set_conf ps5_set_conf = {
-        .conf0 = 0x02,
-        .cmd = 0x0c,
-        .r2_trigger_motor_mode = perc_threshold_r > -1 ? 0x02 : 0x00,
-        .r2_trigger_start_resistance = r2_trigger_start_resistance,
-        .r2_trigger_effect_force = r2_trigger_effect_force,
-        .r2_trigger_range_force = 0xff,
-        .r2_trigger_near_release_str = 0x00,
-        .r2_trigger_near_middle_str = 0x00,
-        .r2_trigger_pressed_str = 0x00,
-        .r2_trigger_actuation_freq = 0x00,
-        .l2_trigger_motor_mode = perc_threshold_l > -1 ? 0x02 : 0x00,
-        .l2_trigger_start_resistance = l2_trigger_start_resistance,
-        .l2_trigger_effect_force = l2_trigger_effect_force,
-        .l2_trigger_range_force = 0xff,
-        .l2_trigger_near_release_str = 0x00,
-        .l2_trigger_near_middle_str = 0x00,
-        .l2_trigger_pressed_str = 0x00,
-        .l2_trigger_actuation_freq = 0x00,
-    };
+    struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
+    struct bt_hidp_ps5_set_conf *base_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
+    struct bt_hidp_ps5_set_conf ps5_set_conf = *base_conf;
+
+    ps5_set_conf.conf0 = 0x02;
+    ps5_set_conf.cmd = 0x0c;
+    ps5_set_conf.r2_trigger_motor_mode = perc_threshold_r > -1 ? 0x02 : 0x00;
+    ps5_set_conf.r2_trigger_start_resistance = r2_trigger_start_resistance;
+    ps5_set_conf.r2_trigger_effect_force = r2_trigger_effect_force;
+    ps5_set_conf.r2_trigger_range_force = 0xff;
+    ps5_set_conf.r2_trigger_near_release_str = 0x00;
+    ps5_set_conf.r2_trigger_near_middle_str = 0x00;
+    ps5_set_conf.r2_trigger_pressed_str = 0x00;
+    ps5_set_conf.r2_trigger_actuation_freq = 0x00;
+    ps5_set_conf.l2_trigger_motor_mode = perc_threshold_l > -1 ? 0x02 : 0x00;
+    ps5_set_conf.l2_trigger_start_resistance = l2_trigger_start_resistance;
+    ps5_set_conf.l2_trigger_effect_force = l2_trigger_effect_force;
+    ps5_set_conf.l2_trigger_range_force = 0xff;
+    ps5_set_conf.l2_trigger_near_release_str = 0x00;
+    ps5_set_conf.l2_trigger_near_middle_str = 0x00;
+    ps5_set_conf.l2_trigger_pressed_str = 0x00;
+    ps5_set_conf.l2_trigger_actuation_freq = 0x00;
 
     bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_set_conf);
 }
@@ -192,8 +194,8 @@ static void ps_send_led_only(struct bt_dev *device, uint32_t color) {
         set_conf.conf0 = 0x02;      /* overwritten with seq_tag by the wrapper */
         set_conf.cmd = 0x00;        /* no vibration flags: LED-only report */
         set_conf.conf1 = 0x14;      /* lightbar + player indicator enable */
-        set_conf.valid_flag2 = BT_HIDP_PS5_VALID_FLAG2_BRIGHTNESS | BT_HIDP_PS5_VALID_FLAG2_LIGHTBAR_SETUP;
-        set_conf.lightbar_setup = BT_HIDP_PS5_LIGHTBAR_SETUP_ON;
+        set_conf.valid_flag2 = 0x02;
+        set_conf.lightbar_setup = 0x02;
         set_conf.led_brightness = ps1_led_brightness();
         set_conf.player_leds = bt_hidp_ps5_player_led(device->ids.out_idx);
         set_conf.leds = color;
@@ -358,30 +360,36 @@ static void bt_hid_ps5_init_callback(void *arg) {
         set_conf->conf0 = 0x02;
         set_conf->cmd = 0x03;
         set_conf->conf1 = 0x14;             /* lightbar 0x04 + player indicator 0x10 */
-        set_conf->valid_flag2 = BT_HIDP_PS5_VALID_FLAG2_BRIGHTNESS | BT_HIDP_PS5_VALID_FLAG2_LIGHTBAR_SETUP;
-        set_conf->lightbar_setup = BT_HIDP_PS5_LIGHTBAR_SETUP_ON;
+        set_conf->valid_flag2 = 0x02;       /* lightbar setup enable */
+        set_conf->lightbar_setup = 0x02;
         set_conf->led_brightness = ps1_led_brightness();
         set_conf->player_leds = bt_hidp_ps5_player_led(device->ids.out_idx);
         set_conf->leds = init_led;
 
+        struct bt_hidp_ps5_set_conf ps5_clear_led = {
+            .conf0 = 0x02,
+            .conf1 = 0x08,
+        };
         struct bt_hidp_ps5_set_conf ps5_set_led = {
             .conf0 = 0x02,
             .cmd = 0x03,
             .conf1 = 0x14,
-            .valid_flag2 = BT_HIDP_PS5_VALID_FLAG2_BRIGHTNESS | BT_HIDP_PS5_VALID_FLAG2_LIGHTBAR_SETUP,
-            .lightbar_setup = BT_HIDP_PS5_LIGHTBAR_SETUP_ON,
+            .valid_flag2 = 0x02,
+            .lightbar_setup = 0x02,
             .led_brightness = ps1_led_brightness(),
             .player_leds = bt_hidp_ps5_player_led(device->ids.out_idx),
             .leds = init_led,
         };
         printf("# %s: PS5 DualSense (Player %ld)\n", __FUNCTION__, device->ids.out_idx + 1);
 
+        bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_clear_led);
         bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_set_led);
 
         /* Set trigger click haptic effect when rumble is on */
         if (config.out_cfg[device->ids.out_idx].acc_mode == ACC_RUMBLE
                 || config.out_cfg[device->ids.out_idx].acc_mode == ACC_BOTH) {
             bt_hid_cmd_ps5_trigger_init(device);
+            bt_hid_cmd_ps5_set_conf(device, (void *)set_conf);
         }
 
         atomic_set_bit(&device->flags, BT_DEV_HID_INIT_DONE);
@@ -467,8 +475,14 @@ static void ps_start_player_rumble(struct bt_dev *device) {
     struct bt_data *bt_data = &bt_adapter.data[dev_id];
     if (device->ids.subtype == BT_PS5_DS) {
         struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
-        ctx->saved_hf = set_conf->hf_motor_pwr;
-        ctx->saved_lf = set_conf->lf_motor_pwr;
+        if (set_conf->hf_motor_pwr == 0xFF && set_conf->lf_motor_pwr == 0x00) {
+            ctx->saved_hf = 0;
+            ctx->saved_lf = 0;
+        } else {
+            ctx->saved_hf = set_conf->hf_motor_pwr;
+            ctx->saved_lf = set_conf->lf_motor_pwr;
+        }
+        set_conf->cmd = 0x03;
         set_conf->hf_motor_pwr = 0xFF;
         set_conf->lf_motor_pwr = 0x00;
         bt_hid_cmd_ps5_set_conf(device, (void *)set_conf);
@@ -551,6 +565,7 @@ void bt_hid_ps_tick(void) {
                     if (dev->ids.subtype == BT_PS5_DS) {
                         struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
                         if (set_conf->hf_motor_pwr == 0xFF && set_conf->lf_motor_pwr == 0x00) {
+                            set_conf->cmd = 0x03;
                             set_conf->hf_motor_pwr = rctx->saved_hf;
                             set_conf->lf_motor_pwr = rctx->saved_lf;
                             bt_hid_cmd_ps5_set_conf(dev, (void *)set_conf);
@@ -586,6 +601,7 @@ void bt_hid_ps_init(struct bt_dev *device) {
     }
 
     struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
+    memset(bt_data->base.output, 0, sizeof(struct bt_hidp_ps5_set_conf));
     struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
 
     /* Init output data for Rumble/LED feedback */
@@ -660,6 +676,8 @@ void bt_hid_ps_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, ui
                         bt_type_update(device->ids.id, BT_PS, BT_PS5_DS);
                         device->ids.subtype = BT_PS5_DS;
                         device->ids.report_type = BT_HIDP_PS5_STATUS;
+                        memset(bt_adapter.data[device->ids.id].base.output, 0,
+                               sizeof(struct bt_hidp_ps5_set_conf));
                     }
 #ifdef CONFIG_BLUERETRO_ADAPTER_RUMBLE_TEST
                     struct bt_hidp_ps5_set_conf rumble = {
