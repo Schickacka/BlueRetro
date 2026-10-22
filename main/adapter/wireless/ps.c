@@ -336,7 +336,14 @@ static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
                 return true;
             }
             else {
-                if (ps_conn_rumble_active(bt_data->base.pids->id)) {
+                /*
+                 * Suppress only an idle console stop that arrives before any
+                 * real game rumble. Once the game has sent a nonzero rumble
+                 * during the pulse, a later zero is a legitimate game stop and
+                 * must clear the motors instead of leaving a stuck output.
+                 */
+                if (ps_conn_rumble_active(bt_data->base.pids->id) &&
+                        !ps_conn_rumble_game_seen(bt_data->base.pids->id)) {
                     return false;
                 }
                 set_conf->hf_motor_pwr = 0x00;
@@ -402,7 +409,14 @@ static bool ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
                 return true;
             }
             else {
-                if (ps_conn_rumble_active(bt_data->base.pids->id)) {
+                /*
+                 * Suppress only an idle console stop that arrives before any
+                 * real game rumble. Once the game has sent a nonzero rumble
+                 * during the pulse, a later zero is a legitimate game stop and
+                 * must clear the motors instead of leaving a stuck output.
+                 */
+                if (ps_conn_rumble_active(bt_data->base.pids->id) &&
+                        !ps_conn_rumble_game_seen(bt_data->base.pids->id)) {
                     return false;
                 }
                 set_conf->cmd = 0x03;

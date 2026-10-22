@@ -205,6 +205,7 @@ uint8_t ps4_is_breathing(uint8_t dev_id);
 void ps4_set_pending_led(uint8_t dev_id, uint32_t color);
 void ps4_blink_stop(uint8_t dev_id);
 bool ps_conn_rumble_active(uint8_t dev_id);
+bool ps_conn_rumble_game_seen(uint8_t dev_id);
 void ps_conn_rumble_game_fb(uint8_t dev_id);
 void bt_hid_ps_tick(void);
 

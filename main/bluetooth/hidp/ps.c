@@ -317,6 +317,14 @@ bool ps_conn_rumble_active(uint8_t dev_id) {
     return false;
 }
 
+bool ps_conn_rumble_game_seen(uint8_t dev_id) {
+    if (dev_id < BT_MAX_DEV) {
+        return ps_conn_rumble_ctxs[dev_id].active &&
+            ps_conn_rumble_ctxs[dev_id].game_fb_cnt > 0;
+    }
+    return false;
+}
+
 void ps_conn_rumble_game_fb(uint8_t dev_id) {
     if (dev_id < BT_MAX_DEV && ps_conn_rumble_ctxs[dev_id].active) {
         ps_conn_rumble_ctxs[dev_id].game_fb_cnt++;

@@ -121,6 +121,7 @@ enum {
 #define MT_PORT_MAX 4
 #define PS_IDLE_RESET_US 3000000 /* 3.0s idle timeout to detect console reset */
 #define PS_RUMBLE_RESYNC_FRAMES 6 /* ~100 ms at 60 Hz; retries a lost nonzero update */
+#define PS_RUMBLE_STOP_RESYNC_FRAMES 6 /* ~100 ms finite burst; recovers a lost stop without idle 10 Hz traffic */
 
 struct ps_ctrl_port {
     struct spi_cfg cfg;
@@ -149,6 +150,7 @@ struct ps_ctrl_port {
     volatile uint8_t rumble_r_val[MT_PORT_MAX];
     volatile uint8_t rumble_l_val[MT_PORT_MAX];
     volatile uint8_t rumble_sync[MT_PORT_MAX];
+    volatile uint8_t rumble_stop_sync[MT_PORT_MAX];
     volatile uint8_t analog_btn[MT_PORT_MAX];
     volatile uint8_t analog_lock[MT_PORT_MAX]; /* ignore button until released after reset */
     volatile uint32_t dev_desc[MT_PORT_MAX];
@@ -388,25 +390,34 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                 bool changed = (r != port->rumble_r_val[id]) || (l != port->rumble_l_val[id]);
                 bool is_nonzero = (r != 0 || l != 0);
                 bool periodic = is_nonzero && (port->rumble_sync[id] >= PS_RUMBLE_RESYNC_FRAMES);
+                bool stop_retry = !is_nonzero && (port->rumble_stop_sync[id] > 0);
 
                 if (is_nonzero) {
+                    port->rumble_stop_sync[id] = 0;
                     if (!periodic) {
                         port->rumble_sync[id]++;
                     }
                 }
                 else {
                     port->rumble_sync[id] = 0;
+                    if (changed) {
+                        port->rumble_stop_sync[id] = PS_RUMBLE_STOP_RESYNC_FRAMES;
+                    }
                 }
                 /*
                  * Update the shadow only after a successful enqueue. If the
                  * queue is full, the mismatch remains and the next poll retries.
-                 * The periodic resend also recovers a nonzero update that was
-                 * accepted by the controller but lost on the BT link.
+                 * The periodic resend recovers a lost nonzero update. The
+                 * finite stop burst recovers a lost zero transition without
+                 * restoring the old continuous 10 Hz idle stop traffic.
                  */
-                if ((changed || periodic) && ps_rumble_fb_send(port, id, r, l)) {
+                if ((changed || periodic || stop_retry) && ps_rumble_fb_send(port, id, r, l)) {
                     port->rumble_r_val[id] = r;
                     port->rumble_l_val[id] = l;
                     port->rumble_sync[id] = 0;
+                    if (!is_nonzero && port->rumble_stop_sync[id]) {
+                        port->rumble_stop_sync[id]--;
+                    }
                 }
             }
             __sync_synchronize();
@@ -424,6 +435,7 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                             port->rumble_r_val[id] = 0;
                             port->rumble_l_val[id] = 0;
                             port->rumble_sync[id] = 0;
+                            port->rumble_stop_sync[id] = 0;
                         }
                         else {
                             /* Keep the shadow nonzero and make the next 0x42 retry immediately. */
@@ -1244,6 +1256,7 @@ void ps_spi_port_cfg(uint16_t mask) {
                     ps_ctrl_ports[i].rumble_r_val[j] = 0;
                     ps_ctrl_ports[i].rumble_l_val[j] = 0;
                     ps_ctrl_ports[i].rumble_sync[j] = 0;
+                    ps_ctrl_ports[i].rumble_stop_sync[j] = 0;
                     ps_ctrl_ports[i].analog_lock[j] = 1;
                 }
                 ps_ctrl_ports[i].pkt_cnt = 0;
@@ -1349,6 +1362,7 @@ void ps_spi_poll(void) {
                     port->rumble_r_val[j] = 0;
                     port->rumble_l_val[j] = 0;
                     port->rumble_sync[j] = 0;
+                    port->rumble_stop_sync[j] = 0;
                     __sync_synchronize();
                     if (j == 0) {
                         gpio_set_level_iram(port->led_pin, 0);
