@@ -396,11 +396,10 @@ static void bt_hid_ps5_init_callback(void *arg) {
         bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_reset);
         bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_set_led);
 
-        /* Set trigger click haptic effect when rumble is on */
+        /* Set trigger click haptic effect when rumble is on (v0.6.4 parity) */
         if (config.out_cfg[device->ids.out_idx].acc_mode == ACC_RUMBLE
                 || config.out_cfg[device->ids.out_idx].acc_mode == ACC_BOTH) {
             bt_hid_cmd_ps5_trigger_init(device);
-            bt_hid_cmd_ps5_set_conf(device, (void *)set_conf);
         }
 
         atomic_set_bit(&device->flags, BT_DEV_HID_INIT_DONE);
@@ -615,10 +614,10 @@ void bt_hid_ps_init(struct bt_dev *device) {
     memset(bt_data->base.output, 0, sizeof(struct bt_hidp_ps5_set_conf));
     struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
 
-    /* Init output data for Rumble/LED feedback */
+    /* Init output data for Rumble/LED feedback: dark on probe (v0.6.4 baseline) */
     set_conf->conf0 = 0xc4;
     set_conf->conf1 = 0x03;
-    set_conf->leds = BR_PS1_COLOR_DS4_DIGITAL;
+    set_conf->leds = 0x000000;
 
     switch (device->ids.subtype) {
         case BT_PS5_DS:
@@ -635,7 +634,7 @@ void bt_hid_ps_init(struct bt_dev *device) {
                 .conf0 = 0xc0,
                 .conf1 = 0x07,
             };
-            ps4_set_conf.leds = BR_PS1_COLOR_DS4_DIGITAL;
+            ps4_set_conf.leds = 0x000000;
 
             printf("# %s\n", __FUNCTION__);
 

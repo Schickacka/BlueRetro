@@ -118,7 +118,7 @@ struct bt_hidp_ps5_set_conf {
 #define BR_PS1_COLOR_ANALOG 0x00006D
 #endif
 
-#define BR_PS1_COLOR_DS4_DIGITAL 0xC0C1C5 /* #c5c1c0 neutral grey (little-endian 0x00BBGGRR) */
+#define BR_PS1_COLOR_DS4_DIGITAL 0x00909194 /* #949190 neutral grey (-25% brightness from #c5c1c0, little-endian 0x00BBGGRR) */
 #define BR_PS1_COLOR_DS5_DIGITAL 0x000000 /* DS5 has hardware player indicator dots; lightbar OFF */
 
 static inline uint32_t ps1_led_color_ds4(uint8_t is_analog) {
