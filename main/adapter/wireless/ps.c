@@ -318,7 +318,7 @@ static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
             if (!ps4_is_breathing(bt_data->base.pids->id)) {
                 uint32_t color = ps1_battery_pulse_active(bt_data->base.pids->id)
                     ? ps1_battery_color()
-                    : ps1_led_color(ps1_is_analog_for(bt_data));
+                    : ps1_led_color_ds4(ps1_is_analog_for(bt_data));
                 set_conf->leds = color;
                 return true;
             }
@@ -327,7 +327,7 @@ static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
         {
             uint32_t color = ps1_battery_pulse_active(bt_data->base.pids->id)
                 ? ps1_battery_color()
-                : ps1_led_color(fb_data->led);
+                : ps1_led_color_ds4(fb_data->led);
 
             if (ps4_is_breathing(bt_data->base.pids->id)) {
                 ps4_set_pending_led(bt_data->base.pids->id, color);
@@ -368,12 +368,12 @@ static bool ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
         case FB_TYPE_PLAYER_LED:
             set_conf->leds = ps1_battery_pulse_active(bt_data->base.pids->id)
                 ? ps1_battery_color()
-                : ps1_led_color(ps1_is_analog_for(bt_data));
+                : ps1_led_color_ds5(ps1_is_analog_for(bt_data));
             return true;
         case FB_TYPE_STATUS_LED:
             set_conf->leds = ps1_battery_pulse_active(bt_data->base.pids->id)
                 ? ps1_battery_color()
-                : ps1_led_color(fb_data->led);
+                : ps1_led_color_ds5(fb_data->led);
             return true;
     }
 

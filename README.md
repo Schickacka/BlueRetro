@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.6.10)
+# BlueRetro — PlayStation 1 Custom Edition (v0.6.11)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -20,6 +20,14 @@
 O **BlueRetro — PlayStation 1 Custom Edition** é um firmware customizado de alta precisão para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** voltado ao console **Sony PlayStation 1** (compatível com todas as revisões de hardware: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
 
 Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi desenvolvida e mantida por **Schickacka** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200), robustez de concorrência em tempo real e estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
+
+---
+
+## Novidades e Correções da Versão 0.6.11
+
+* **Iluminação Especializada DualShock 4 vs DualSense (PS5):**
+  - **DualShock 4 com LED Cinza Neutro (#c5c1c0):** Como o controle DualShock 4 não possui indicadores luminosos de jogador independentes da barra de luz, a lightbar permanece acesa em cinza neutro suave (`#c5c1c0` / `0xC0C1C5`) durante a conexão no Modo Digital, permitindo identificar visualmente que o controle está ligado e conectado. No Modo Analógico, a barra transita para Vermelho autêntico (`0x00006D`).
+  - **DualSense (PS5) Mantido com Lightbar Desligada no Digital:** O DualSense permanece com o comportamento perfeito aprovado na v0.6.10: lightbar 100% desligada no Modo Digital com apenas os pontos discretos de identificação de jogador acesos sob o touchpad (1 ponto = P1, 2 pontos = P2), acendendo em Vermelho no Modo Analógico.
 
 ---
 
@@ -219,7 +227,7 @@ Configuração padrão dos pinos de conexão entre a placa **ESP32 DevKit V1** e
 ### Método 1: Atualização Sem Fio via Bluetooth (OTA - Recomendado)
 Se o BlueRetro já estiver instalado no console, o procedimento pode ser realizado sem abrir o videogame e sem cabos:
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.6.10_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.6.11_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -228,7 +236,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.6.10_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.6.11_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)

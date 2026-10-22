@@ -258,7 +258,10 @@ static void ps_battery_tick(struct bt_dev *device) {
     else {
         if (++ctx->pulse_tick >= PS1_BATT_PULSE_TICKS) {
             ctx->pulse = false;
-            ps_send_led_only(device, ps1_led_color(ps_is_analog_for_dev(device)));
+            uint32_t c = (device->ids.subtype == BT_PS5_DS)
+                ? ps1_led_color_ds5(ps_is_analog_for_dev(device))
+                : ps1_led_color_ds4(ps_is_analog_for_dev(device));
+            ps_send_led_only(device, c);
         }
     }
 }
@@ -321,7 +324,7 @@ static void ps4_start_player_blink(struct bt_dev *device) {
     if (wired_adapter.system_id == PSX || wired_adapter.system_id == PS2) {
         is_analog = ps_spi_is_analog(device->ids.out_idx);
     }
-    ctx->pending_led = ps1_led_color(is_analog);
+    ctx->pending_led = ps1_led_color_ds4(is_analog);
     ctx->current_breath = 0;
     ctx->total_breaths = device->ids.out_idx + 1;
     ctx->step = 0;
@@ -353,7 +356,7 @@ static void bt_hid_ps5_init_callback(void *arg) {
         if (wired_adapter.system_id == PSX || wired_adapter.system_id == PS2) {
             is_analog = ps_spi_is_analog(device->ids.out_idx);
         }
-        uint32_t init_led = ps1_led_color(is_analog);
+        uint32_t init_led = ps1_led_color_ds5(is_analog);
 
         /* Init output data for Rumble/LED feedback */
         memset(set_conf, 0x00, sizeof(*set_conf));
@@ -615,7 +618,7 @@ void bt_hid_ps_init(struct bt_dev *device) {
     /* Init output data for Rumble/LED feedback */
     set_conf->conf0 = 0xc4;
     set_conf->conf1 = 0x03;
-    set_conf->leds = 0x000000;
+    set_conf->leds = BR_PS1_COLOR_DS4_DIGITAL;
 
     switch (device->ids.subtype) {
         case BT_PS5_DS:
@@ -632,7 +635,7 @@ void bt_hid_ps_init(struct bt_dev *device) {
                 .conf0 = 0xc0,
                 .conf1 = 0x07,
             };
-            ps4_set_conf.leds = 0x000000;
+            ps4_set_conf.leds = BR_PS1_COLOR_DS4_DIGITAL;
 
             printf("# %s\n", __FUNCTION__);
 

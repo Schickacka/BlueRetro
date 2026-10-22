@@ -118,27 +118,35 @@ struct bt_hidp_ps5_set_conf {
 #define BR_PS1_COLOR_ANALOG 0x00006D
 #endif
 
-#ifdef CONFIG_BR_PS1_LED_DIGITAL_COLOR
-#define BR_PS1_COLOR_DIGITAL CONFIG_BR_PS1_LED_DIGITAL_COLOR
-#else
-#define BR_PS1_COLOR_DIGITAL 0x000000
-#endif
+#define BR_PS1_COLOR_DS4_DIGITAL 0xC0C1C5 /* #c5c1c0 neutral grey (little-endian 0x00BBGGRR) */
+#define BR_PS1_COLOR_DS5_DIGITAL 0x000000 /* DS5 has hardware player indicator dots; lightbar OFF */
 
-static inline uint32_t ps1_led_color(uint8_t is_analog) {
+static inline uint32_t ps1_led_color_ds4(uint8_t is_analog) {
 #ifdef CONFIG_BR_PS1_NIGHT_MODE
-    uint32_t c = is_analog ? BR_PS1_COLOR_ANALOG : BR_PS1_COLOR_DIGITAL;
-    /*
-     * The report union is little-endian: low byte = red, middle = green,
-     * high byte = blue. Halve the bytes in place so arbitrary user colors
-     * keep their hue in night mode.
-     */
+    uint32_t c = is_analog ? BR_PS1_COLOR_ANALOG : BR_PS1_COLOR_DS4_DIGITAL;
     uint8_t r = (c & 0xFF) / 2;
     uint8_t g = ((c >> 8) & 0xFF) / 2;
     uint8_t b = ((c >> 16) & 0xFF) / 2;
     return (b << 16) | (g << 8) | r;
 #else
-    return is_analog ? BR_PS1_COLOR_ANALOG : BR_PS1_COLOR_DIGITAL;
+    return is_analog ? BR_PS1_COLOR_ANALOG : BR_PS1_COLOR_DS4_DIGITAL;
 #endif
+}
+
+static inline uint32_t ps1_led_color_ds5(uint8_t is_analog) {
+#ifdef CONFIG_BR_PS1_NIGHT_MODE
+    uint32_t c = is_analog ? BR_PS1_COLOR_ANALOG : BR_PS1_COLOR_DS5_DIGITAL;
+    uint8_t r = (c & 0xFF) / 2;
+    uint8_t g = ((c >> 8) & 0xFF) / 2;
+    uint8_t b = ((c >> 16) & 0xFF) / 2;
+    return (b << 16) | (g << 8) | r;
+#else
+    return is_analog ? BR_PS1_COLOR_ANALOG : BR_PS1_COLOR_DS5_DIGITAL;
+#endif
+}
+
+static inline uint32_t ps1_led_color(uint8_t is_analog) {
+    return ps1_led_color_ds4(is_analog);
 }
 
 static inline uint8_t ps1_led_brightness(void) {
