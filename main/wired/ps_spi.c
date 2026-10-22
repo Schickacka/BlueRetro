@@ -386,10 +386,16 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                 uint8_t r = port->rumble_r_state[id] ? req[port->rumble_r_idx[id]] : 0;
                 uint8_t l = port->rumble_l_state[id] ? req[port->rumble_l_idx[id]] : 0;
                 bool changed = (r != port->rumble_r_val[id]) || (l != port->rumble_l_val[id]);
-                bool periodic = (port->rumble_sync[id] >= PS_RUMBLE_RESYNC_FRAMES);
+                bool is_nonzero = (r != 0 || l != 0);
+                bool periodic = is_nonzero && (port->rumble_sync[id] >= PS_RUMBLE_RESYNC_FRAMES);
 
-                if (!periodic) {
-                    port->rumble_sync[id]++;
+                if (is_nonzero) {
+                    if (!periodic) {
+                        port->rumble_sync[id]++;
+                    }
+                }
+                else {
+                    port->rumble_sync[id] = 0;
                 }
                 /*
                  * Update the shadow only after a successful enqueue. If the

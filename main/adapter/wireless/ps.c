@@ -105,6 +105,9 @@ static bool ps_rumble_on_for(const struct bt_data *bt_data) {
 
     if (bt_data->base.pids &&
             bt_host_get_dev_from_id(bt_data->base.pids->id, &device) >= 0 && device) {
+        if (ps_conn_rumble_active(device->ids.id)) {
+            return true;
+        }
         return atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON);
     }
     return false;
@@ -326,16 +329,20 @@ static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
 
     switch (fb_data->type) {
         case FB_TYPE_RUMBLE:
-            ps_conn_rumble_game_fb(bt_data->base.pids->id);
             if (fb_data->state) {
+                ps_conn_rumble_game_fb(bt_data->base.pids->id);
                 set_conf->hf_motor_pwr = fb_data->hf_pwr;
                 set_conf->lf_motor_pwr = fb_data->lf_pwr;
+                return true;
             }
             else {
+                if (ps_conn_rumble_active(bt_data->base.pids->id)) {
+                    return false;
+                }
                 set_conf->hf_motor_pwr = 0x00;
                 set_conf->lf_motor_pwr = 0x00;
+                return true;
             }
-            return true;
         case FB_TYPE_PLAYER_LED:
         {
             uint32_t color = ps1_battery_pulse_active(bt_data->base.pids->id)
@@ -387,17 +394,22 @@ static bool ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
 
     switch (fb_data->type) {
         case FB_TYPE_RUMBLE:
-            ps_conn_rumble_game_fb(bt_data->base.pids->id);
-            set_conf->cmd = 0x03; /* Enable motor_right (bit 0) and motor_left (bit 1) */
             if (fb_data->state) {
+                ps_conn_rumble_game_fb(bt_data->base.pids->id);
+                set_conf->cmd = 0x03; /* Enable motor_right (bit 0) and motor_left (bit 1) */
                 set_conf->hf_motor_pwr = fb_data->hf_pwr;
                 set_conf->lf_motor_pwr = fb_data->lf_pwr;
+                return true;
             }
             else {
+                if (ps_conn_rumble_active(bt_data->base.pids->id)) {
+                    return false;
+                }
+                set_conf->cmd = 0x03;
                 set_conf->hf_motor_pwr = 0x00;
                 set_conf->lf_motor_pwr = 0x00;
+                return true;
             }
-            return true;
         case FB_TYPE_PLAYER_LED:
             set_conf->leds = ps1_battery_pulse_active(bt_data->base.pids->id)
                 ? ps1_battery_color()

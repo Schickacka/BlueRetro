@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.7.0)
+# BlueRetro — PlayStation 1 Custom Edition (v0.7.1)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -23,18 +23,38 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 
 ---
 
+## Novidades e Correções da Versão 0.7.1
+
+A versão 0.7.1 refina o subsistema de feedback da v0.7.0, sanando riscos de corte prematuro na temporização de conexão e eliminando sobrecarga no enlace Bluetooth:
+
+1. **Proteção Integral do Pulso de Conexão de 150 ms:**
+   - Adicionada a função [`ps_conn_rumble_active()`](main/bluetooth/hidp/ps.c), que sinaliza o estado ativo da vibração háptica de conexão.
+   - Em [`wireless/ps.c`](main/adapter/wireless/ps.c), comandos ociosos de parada (`state == 0`) enviados pelo console e eventos simultâneos de LED são impedidos de cortar os motores precocemente durante o pulso inicial.
+   - Se um comando legítimo de vibração do jogo (`state != 0`) chegar durante o pareamento, os dados reais do jogo assumem precedência imediata.
+
+2. **Eliminação de Tráfego Ocioso de Parada a 10 Hz:**
+   - Em [`ps_spi.c`](main/wired/ps_spi.c), a rotina de ressincronização periódica a cada 6 frames foi restrita exclusivamente a vibrações ativas (`r != 0 || l != 0`).
+   - Quando o console está ocioso (`r == 0 && l == 0`), o reenvio contínuo de pacotes de parada a ~10 Hz foi eliminado, preservando a largura de banda e mantendo o link Bluetooth em repouso.
+
+3. **Ajuste e Rigor na Documentação Técnica:**
+   - Esclarecido o modelo de despacho *best-effort* no desligamento/reset em [`host.c`](main/bluetooth/host.c).
+   - Identificada a dependência de `CONFIG_BR_PS1_BATTERY_IND=y` para os avisos luminosos de bateria (desativado por padrão no perfil oficial de hardware).
+   - Atualizadas as instruções de build local com a geração explícita de `version.txt` e a dependência `bleak` para o gravador OTA.
+
+---
+
 ## Novidades e Correções da Versão 0.7.0
 
 A versão 0.7.0 implementa 10 correções arquiteturais profundas na camada de concorrência, filas de feedback e máquina de estados de iluminação e rumble:
 
 1. **Garantia de Parada de Rumble sob Pressão de Fila:**
    - A função `adapter_q_fb()` agora retorna confirmação de inserção na fila (`bool`).
-   - Se a fila estiver cheia no momento em que o jogo comanda a parada dos motores, o evento de parada é retido em uma máscara atômica de fallback (`fb_rumble_stop_mask`) e aplicado diretamente pela tarefa `bt_fb_task`, garantindo que o controle nunca fique vibrando indefinidamente.
+   - Se a fila estiver cheia no momento em que o jogo comanda a parada dos motores, o evento de parada é retido em uma máscara atômica de fallback (`fb_rumble_stop_mask`) e aplicado diretamente pela tarefa `bt_fb_task`, recuperando comandos de parada quando a fila de entrada descarta pacotes sob alta carga em controles PlayStation (DS4 / DS5).
    - O shadow do barramento SPI (`rumble_r_val`/`rumble_l_val`) só é atualizado após enfileiramento bem-sucedido, forçando repetição no próximo ciclo se houver descarte.
    - Adicionada ressincronização periódica a cada ~100 ms para recuperar estados de vibração eventualmente perdidos no ar.
 
 2. **Parada Segura de Motores no Reset ou Desconexão do Dispositivo:**
-   - Em `bt_host_reset_dev()`, um relatório explícito de parada é enviado antes da liberação de memória e encerramento do driver, evitando que motores permaneçam ligados caso o controle desconecte subitamente enquanto vibrava.
+   - Em `bt_host_reset_dev()`, envio em modo best-effort de relatório de desligamento dos motores antes da liberação de memória e encerramento do driver, mitigando motores presos quando o enlace Bluetooth ainda aceita pacotes antes do reset.
 
 3. **Isolamento de Feedback por Dispositivo (`fb_changed_mask`):**
    - Substituição da variável global `fb_changed` por uma máscara de bits por dispositivo (`fb_changed_mask`), evitando que comandos de LED ou rumble direcionados ao Jogador 1 forcem transmissões desnecessárias de pacotes ao Jogador 2.
@@ -50,7 +70,7 @@ A versão 0.7.0 implementa 10 correções arquiteturais profundas na camada de c
    - Criada a opção `CONFIG_BR_PS1_LED_DIGITAL_COLOR_DS5` (padrão `0x000000`), permitindo personalização independente mantendo o DualSense com a barra apagada e apenas os pontos de jogador ativos.
 
 7. **Preservação de Rumble Durante Avisos de Bateria:**
-   - A rotina `ps_send_led_only()` agora preserva os parâmetros ativos de vibração ao invés de zerar os motores a cada pulso de notificação de bateria baixa.
+   - Quando a indicação de bateria baixa estiver ativada (`CONFIG_BR_PS1_BATTERY_IND=y`, opcional), a rotina `ps_send_led_only()` preserva os parâmetros ativos de vibração em vez de zerar os motores a cada pulso luminoso.
 
 8. **Retenção de Cor de Jogador Durante Animação de Conexão:**
    - Se um comando de LED de jogador chegar enquanto o controle executa a respiração azul inicial, a cor solicitada é registrada como pendente (`ps4_set_pending_led`) e aplicada imediatamente ao término da animação.
@@ -281,7 +301,10 @@ Configuração padrão dos pinos de conexão entre a placa **ESP32 DevKit V1** e
 ### Método 1: Atualização Sem Fio via Bluetooth (OTA - Recomendado)
 Se o BlueRetro já estiver instalado no console, o procedimento pode ser realizado sem abrir o videogame e sem cabos:
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.0_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+> [!NOTE]
+> O script de atualização sem fio (`ble_ota_update.py`) requer a biblioteca Python `bleak` (`pip install bleak`).
+
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.1_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -290,7 +313,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.0_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.1_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)
@@ -309,8 +332,8 @@ python -m esptool --chip esp32 --port COMx -b 921600 --before default_reset --af
 * **Xbox Wireless Controller** (Modelos 1708 com Bluetooth, Series X/S 1914).
 * **Linha 8BitDo** (Pro 2, Ultimate Bluetooth, SN30 Pro, M30).
 
-### Comportamento Validado em Jogos
-A calibração do firmware abrange os padrões de comunicação e feedback utilizados pela biblioteca do PlayStation:
+### Padrões de Feedback e Comportamento em Jogos
+O firmware foi projetado e calibrado para atender aos padrões de comunicação e feedback utilizados pela biblioteca do PlayStation (sujeito à validação física em hardware real):
 * **Efeitos de Pulso e Modulação:** Resposta de motores pesados com repouso verdadeiro nos intervalos de baixa intensidade (como batimentos cardíacos, avisos de proximidade e alertas de status).
 * **Vibração Sustentada Contínua:** Disparos prolongados de armas automáticas, aceleração contínua e superfícies acidentadas sem interrupções por watchdog.
 * **Transições de Cena e Vídeos:** Preservação do modo analógico durante pausas de leitura em FMVs e telas de transição.
@@ -326,6 +349,9 @@ Este repositório possui fluxo automatizado de integração contínua (CI) via *
 # Clonagem recursiva obrigatória para obtenção de submódulos
 git clone --recursive https://github.com/Schickacka/BlueRetro.git
 cd BlueRetro
+
+# Gerar arquivo de versão do firmware customizado
+echo "v0.7.1 ps1-custom" > version.txt
 
 # Carregar arquivo de configuração para PlayStation
 cp configs/hw1/playstation sdkconfig

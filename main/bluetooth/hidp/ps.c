@@ -190,7 +190,7 @@ static uint8_t ps_is_analog_for_dev(struct bt_dev *device) {
 
 static void ps_send_led_only(struct bt_dev *device, uint32_t color) {
     struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
-    bool rumble_on = atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON);
+    bool rumble_on = atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON) || ps_conn_rumble_active(device->ids.id);
 
     /*
      * Start from the current output instead of a zeroed report. The old code
@@ -308,6 +308,13 @@ void ps4_set_pending_led(uint8_t dev_id, uint32_t color) {
     if (dev_id < BT_MAX_DEV) {
         ps4_blink_ctxs[dev_id].pending_led = color;
     }
+}
+
+bool ps_conn_rumble_active(uint8_t dev_id) {
+    if (dev_id < BT_MAX_DEV) {
+        return ps_conn_rumble_ctxs[dev_id].active;
+    }
+    return false;
 }
 
 void ps_conn_rumble_game_fb(uint8_t dev_id) {
