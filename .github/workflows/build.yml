@@ -21,7 +21,7 @@ jobs:
       run: |
         . $IDF_PATH/export.sh
         rm -fr build
-        echo "v0.6.5 ps1-custom" > version.txt
+        echo "v0.6.6 ps1-custom" > version.txt
         cp configs/hw1/playstation sdkconfig
         BR_HW=_hw1 BR_SYS=_playstation idf.py reconfigure build
     - name: Copy OTA initial binary

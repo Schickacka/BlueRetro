@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.6.5)
+# BlueRetro — PlayStation 1 Custom Edition (v0.6.6)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -23,7 +23,7 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 
 ---
 
-## Novidades e Correções da Versão 0.6.5
+## Novidades e Correções da Versão 0.6.6
 
 * **Correção da Lightbar e LEDs de Conexão do DualSense (PS5):**
   - **Restauração da Cor da Lightbar em `FB_TYPE_PLAYER_LED` e Guarda Ativa:** No tratador `ps5_fb_from_generic`, o evento de mapeamento de porta `FB_TYPE_PLAYER_LED` não atribuía a cor da lightbar para o modo emulado (Digital/Analógico), permitindo que a barra ficasse apagada após eventos de conexão ou alternância entre controles. O tratador agora calcula e mantém a cor ativa (Branco suave em Digital / Vermelho em Analógico) e conta com uma guarda para garantir que `set_conf->leds` nunca seja transmitido como zero.
@@ -177,7 +177,7 @@ Configuração padrão dos pinos de conexão entre a placa **ESP32 DevKit V1** e
 ### Método 1: Atualização Sem Fio via Bluetooth (OTA - Recomendado)
 Se o BlueRetro já estiver instalado no console, o procedimento pode ser realizado sem abrir o videogame e sem cabos:
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.6.5_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.6.6_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -186,7 +186,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.6.5_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.6.6_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)
