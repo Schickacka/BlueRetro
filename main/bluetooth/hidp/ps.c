@@ -192,8 +192,8 @@ static void ps_send_led_only(struct bt_dev *device, uint32_t color) {
         set_conf.conf0 = 0x02;      /* overwritten with seq_tag by the wrapper */
         set_conf.cmd = 0x00;        /* no vibration flags: LED-only report */
         set_conf.conf1 = 0x14;      /* lightbar + player indicator enable */
-        set_conf.valid_flag2 = 0x02;
-        set_conf.lightbar_setup = 0x02;
+        set_conf.valid_flag2 = BT_HIDP_PS5_VALID_FLAG2_BRIGHTNESS | BT_HIDP_PS5_VALID_FLAG2_LIGHTBAR_SETUP;
+        set_conf.lightbar_setup = BT_HIDP_PS5_LIGHTBAR_SETUP_ON;
         set_conf.led_brightness = ps1_led_brightness();
         set_conf.player_leds = bt_hidp_ps5_player_led(device->ids.out_idx);
         set_conf.leds = color;
@@ -358,29 +358,24 @@ static void bt_hid_ps5_init_callback(void *arg) {
         set_conf->conf0 = 0x02;
         set_conf->cmd = 0x03;
         set_conf->conf1 = 0x14;             /* lightbar 0x04 + player indicator 0x10 */
-        set_conf->valid_flag2 = 0x02;       /* lightbar setup enable */
-        set_conf->lightbar_setup = 0x02;
+        set_conf->valid_flag2 = BT_HIDP_PS5_VALID_FLAG2_BRIGHTNESS | BT_HIDP_PS5_VALID_FLAG2_LIGHTBAR_SETUP;
+        set_conf->lightbar_setup = BT_HIDP_PS5_LIGHTBAR_SETUP_ON;
         set_conf->led_brightness = ps1_led_brightness();
         set_conf->player_leds = bt_hidp_ps5_player_led(device->ids.out_idx);
         set_conf->leds = init_led;
 
-        struct bt_hidp_ps5_set_conf ps5_clear_led = {
-            .conf0 = 0x02,
-            .conf1 = 0x08,
-        };
         struct bt_hidp_ps5_set_conf ps5_set_led = {
             .conf0 = 0x02,
             .cmd = 0x03,
             .conf1 = 0x14,
-            .valid_flag2 = 0x02,
-            .lightbar_setup = 0x02,
+            .valid_flag2 = BT_HIDP_PS5_VALID_FLAG2_BRIGHTNESS | BT_HIDP_PS5_VALID_FLAG2_LIGHTBAR_SETUP,
+            .lightbar_setup = BT_HIDP_PS5_LIGHTBAR_SETUP_ON,
             .led_brightness = ps1_led_brightness(),
             .player_leds = bt_hidp_ps5_player_led(device->ids.out_idx),
             .leds = init_led,
         };
         printf("# %s: PS5 DualSense (Player %ld)\n", __FUNCTION__, device->ids.out_idx + 1);
 
-        bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_clear_led);
         bt_hid_cmd_ps5_set_conf(device, (void *)&ps5_set_led);
 
         /* Set trigger click haptic effect when rumble is on */

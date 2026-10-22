@@ -343,13 +343,13 @@ static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
     return false;
 }
 
-static void ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_data) {
+static bool ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_data) {
     struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
 
     set_conf->conf0 = 0x02;
     set_conf->conf1 = 0x14;             /* lightbar 0x04 + player indicator 0x10 */
-    set_conf->valid_flag2 = 0x02;       /* lightbar setup enable */
-    set_conf->lightbar_setup = 0x02;
+    set_conf->valid_flag2 = BT_HIDP_PS5_VALID_FLAG2_BRIGHTNESS | BT_HIDP_PS5_VALID_FLAG2_LIGHTBAR_SETUP;
+    set_conf->lightbar_setup = BT_HIDP_PS5_LIGHTBAR_SETUP_ON;
     set_conf->led_brightness = ps1_led_brightness();
     set_conf->player_leds = bt_hidp_ps5_player_led(bt_data->base.pids->out_idx);
 
@@ -364,17 +364,17 @@ static void ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
                 set_conf->hf_motor_pwr = 0x00;
                 set_conf->lf_motor_pwr = 0x00;
             }
-            break;
+            return true;
         case FB_TYPE_PLAYER_LED:
             set_conf->leds = ps1_battery_pulse_active(bt_data->base.pids->id)
                 ? ps1_battery_color()
                 : ps1_led_color(ps1_is_analog_for(bt_data));
-            break;
+            return true;
         case FB_TYPE_STATUS_LED:
             set_conf->leds = ps1_battery_pulse_active(bt_data->base.pids->id)
                 ? ps1_battery_color()
                 : ps1_led_color(fb_data->led);
-            break;
+            return true;
     }
 
     if (set_conf->leds == 0) {
@@ -382,6 +382,7 @@ static void ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
             ? ps1_battery_color()
             : ps1_led_color(ps1_is_analog_for(bt_data));
     }
+    return false;
 }
 
 int32_t ps_to_generic(struct bt_data *bt_data, struct wireless_ctrl *ctrl_data) {
@@ -407,7 +408,7 @@ bool ps_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_data) {
     bool ret = true;
     switch (bt_data->base.pids->subtype) {
         case BT_PS5_DS:
-            ps5_fb_from_generic(fb_data, bt_data);
+            ret = ps5_fb_from_generic(fb_data, bt_data);
             break;
         default:
             ret = ps4_fb_from_generic(fb_data, bt_data);
