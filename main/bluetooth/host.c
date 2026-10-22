@@ -240,6 +240,17 @@ static void bt_fb_task(void *param) {
                     break;
                 case FB_TYPE_STATUS_LED:
                 case FB_TYPE_PLAYER_LED:
+                    if (device && device->ids.subtype == BT_PS5_DS) {
+                        /* We need to clear LEDs before setting them */
+                        struct bt_hidp_ps5_set_conf ps5_clear_led = {
+                            .conf0 = 0x02,
+                            .conf1 = 0x08,
+                        };
+                        bt_host_tx_lock();
+                        bt_hid_cmd_ps_set_conf(device, (void *)&ps5_clear_led);
+                        bt_host_tx_unlock();
+                    }
+                    /* Fallthrough */
                 case FB_TYPE_RUMBLE:
                     if (bt_data) {
                         bt_host_tx_lock();

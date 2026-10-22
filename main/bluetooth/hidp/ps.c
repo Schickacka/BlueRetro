@@ -193,7 +193,7 @@ static void ps_send_led_only(struct bt_dev *device, uint32_t color) {
         set_conf.cmd = 0x00;        /* no vibration flags: LED-only report */
         set_conf.conf1 = 0x14;      /* lightbar + player indicator enable */
         set_conf.valid_flag2 = 0x02;
-        set_conf.lightbar_setup = BT_HIDP_PS5_LIGHTBAR_SETUP_ON;
+        set_conf.lightbar_setup = 0x02;
         set_conf.led_brightness = ps1_led_brightness();
         set_conf.player_leds = bt_hidp_ps5_player_led(device->ids.out_idx);
         set_conf.leds = color;
@@ -343,6 +343,7 @@ static void bt_hid_ps5_init_callback(void *arg) {
     }
 
     if (device->ids.subtype == BT_PS5_DS || device->ids.report_type == BT_HIDP_PS5_STATUS) {
+        device->ids.subtype = BT_PS5_DS;
         struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
         struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
 
@@ -358,7 +359,7 @@ static void bt_hid_ps5_init_callback(void *arg) {
         set_conf->cmd = 0x03;
         set_conf->conf1 = 0x14;             /* lightbar 0x04 + player indicator 0x10 */
         set_conf->valid_flag2 = 0x02;       /* lightbar setup enable */
-        set_conf->lightbar_setup = BT_HIDP_PS5_LIGHTBAR_SETUP_ON;
+        set_conf->lightbar_setup = 0x02;
         set_conf->led_brightness = ps1_led_brightness();
         set_conf->player_leds = bt_hidp_ps5_player_led(device->ids.out_idx);
         set_conf->leds = init_led;
@@ -372,7 +373,7 @@ static void bt_hid_ps5_init_callback(void *arg) {
             .cmd = 0x03,
             .conf1 = 0x14,
             .valid_flag2 = 0x02,
-            .lightbar_setup = BT_HIDP_PS5_LIGHTBAR_SETUP_ON,
+            .lightbar_setup = 0x02,
             .led_brightness = ps1_led_brightness(),
             .player_leds = bt_hidp_ps5_player_led(device->ids.out_idx),
             .leds = init_led,
@@ -660,16 +661,10 @@ void bt_hid_ps_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, ui
 #endif
                     break;
                 case BT_HIDP_PS5_STATUS:
-                    if (device->ids.report_type != BT_HIDP_PS5_STATUS || device->ids.subtype != BT_PS5_DS) {
+                    if (device->ids.report_type != BT_HIDP_PS5_STATUS) {
                         bt_type_update(device->ids.id, BT_PS, BT_PS5_DS);
+                        device->ids.subtype = BT_PS5_DS;
                         device->ids.report_type = BT_HIDP_PS5_STATUS;
-                        ps4_blink_stop(device->ids.id);
-                        if (!atomic_test_bit(&device->flags, BT_DEV_HID_INIT_DONE)) {
-                            if (device->timer_hdl) {
-                                esp_timer_stop(device->timer_hdl);
-                            }
-                            bt_hid_ps5_init_callback((void *)device);
-                        }
                     }
 #ifdef CONFIG_BLUERETRO_ADAPTER_RUMBLE_TEST
                     struct bt_hidp_ps5_set_conf rumble = {

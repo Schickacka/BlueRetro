@@ -25,11 +25,10 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 
 ## Novidades e Correções da Versão 0.6.5
 
-* **Correção Definitiva da Lightbar / LEDs de Conexão do DualSense (PS5):**
-  - **Correção do comando `lightbar_setup` (`LIGHT_ON`):** O campo `lightbar_setup` no relatório de saída Bluetooth `0x31` estava configurado como `0x02` (`DS_OUTPUT_LIGHTBAR_SETUP_LIGHT_OUT`), que comanda o microcontrolador do DualSense a apagar/esmaecer a lightbar. O valor foi corrigido para `0x01` (`DS_OUTPUT_LIGHTBAR_SETUP_LIGHT_ON`), mantendo a lightbar permanentemente acesa na cor do modo ativo.
-  - **Detecção e Inicialização Imediata na Transição DS4 -> DS5:** Ao conectar um DualSense após um DualShock 4, se o controle anunciar o nome genérico `"Wireless Controller"` no pareamento Bluetooth Classic, o BlueRetro armava um temporizador de espera de 1 segundo para o DualShock 4 e podia iniciar a máquina de estado de respiração azul (`ps4_start_player_blink`). Agora, ao receber o primeiro relatório `BT_HIDP_PS5_STATUS` (`0x31`), o driver cancela imediatamente qualquer temporizador pendente e qualquer ciclo de blink de DS4, chamando instantaneamente a inicialização nativa do DualSense (`bt_hid_ps5_init_callback`).
-  - **Restauração da Cor da Lightbar em `FB_TYPE_PLAYER_LED` e Guarda Ativa:** O tratador de `FB_TYPE_PLAYER_LED` em `ps5_fb_from_generic` não atribuía a cor da lightbar para o modo emulado (Digital/Analógico), permitindo que a barra ficasse apagada após eventos de mapeamento de porta. O tratador agora atualiza a cor corretamente e conta com uma guarda para garantir que `set_conf->leds` nunca seja transmitido como zero.
-  - **Eliminação de Pacotes Espúrios de Liberação de LEDs:** Removido o envio do pacote intermediário `ps5_clear_led` (`conf1 = 0x08`, `RELEASE_LEDS`) na fila de tarefas de feedback (`bt_fb_task`), eliminando qualquer oscilação ou desligamento transitório da lightbar durante alternâncias de status do console.
+* **Correção da Lightbar e LEDs de Conexão do DualSense (PS5):**
+  - **Restauração da Cor da Lightbar em `FB_TYPE_PLAYER_LED` e Guarda Ativa:** No tratador `ps5_fb_from_generic`, o evento de mapeamento de porta `FB_TYPE_PLAYER_LED` não atribuía a cor da lightbar para o modo emulado (Digital/Analógico), permitindo que a barra ficasse apagada após eventos de conexão ou alternância entre controles. O tratador agora calcula e mantém a cor ativa (Branco suave em Digital / Vermelho em Analógico) e conta com uma guarda para garantir que `set_conf->leds` nunca seja transmitido como zero.
+  - **Identificação Precisa do Subtipo DualSense:** No tratador de status `BT_HIDP_PS5_STATUS` e no callback de inicialização, `device->ids.subtype = BT_PS5_DS` é explicitamente atribuído, garantindo o roteamento correto de relatórios de feedback e pacotes `0x31`.
+  - **Preservação do Ciclo Nativo de Inicialização e Pacote de Liberação de LEDs:** Mantido o temporizador de inicialização de 1 segundo para estabilização de canais Bluetooth e preservado o pacote `ps5_clear_led` (`conf1 = 0x08`, `RELEASE_LEDS`) exigido pelo firmware do DualSense antes da escrita de novos estados luminosos.
 
 ---
 
