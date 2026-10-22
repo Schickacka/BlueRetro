@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.7.1)
+# BlueRetro — PlayStation 1 Custom Edition (v0.7.2)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -23,18 +23,33 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 
 ---
 
+## Novidades e Correções da Versão 0.7.2
+
+A versão 0.7.2 aprimora a máquina de estados de feedback e a entrega de comandos de desligamento de vibração:
+
+1. **Preservação de Stop Real do Jogo Durante o Pulso de Conexão:**
+   - Implementada a verificação [`ps_conn_rumble_game_seen()`](main/bluetooth/hidp/ps.c) em conjunto com [`ps_conn_rumble_active()`](main/bluetooth/hidp/ps.c).
+   - Comandos ociosos de parada (`state == 0`) enviados pelo console continuam suprimidos durante os 150 ms iniciais para proteger o pulso de pareamento, mas apenas **antes do primeiro rumble legítimo do jogo**.
+   - Caso o jogo envie um comando ativo de vibração seguido de desligamento dentro da janela inicial, o stop do jogo é prontamente respeitado, evitando que motores permaneçam ligados.
+
+2. **Rajada Finita de Stop sem Reenvio Contínuo em Repouso:**
+   - Em [`ps_spi.c`](main/wired/ps_spi.c), adicionada a rajada finita de 6 quadros (`PS_RUMBLE_STOP_RESYNC_FRAMES`, ~100 ms a 60 Hz), disparada exclusivamente após uma transição real `nonzero → zero`.
+   - Recupera eventuais perdas de pacote de desligamento no enlace Bluetooth e cessa completamente as transmissões após a rajada, preservando a largura de banda e mantendo o link em repouso sem gerar tráfego ocioso a 10 Hz.
+
+---
+
 ## Novidades e Correções da Versão 0.7.1
 
 A versão 0.7.1 refina o subsistema de feedback da v0.7.0, sanando riscos de corte prematuro na temporização de conexão e eliminando sobrecarga no enlace Bluetooth:
 
-1. **Proteção Integral do Pulso de Conexão de 150 ms:**
+1. **Proteção do Pulso de Conexão de 150 ms:**
    - Adicionada a função [`ps_conn_rumble_active()`](main/bluetooth/hidp/ps.c), que sinaliza o estado ativo da vibração háptica de conexão.
-   - Em [`wireless/ps.c`](main/adapter/wireless/ps.c), comandos ociosos de parada (`state == 0`) enviados pelo console e eventos simultâneos de LED são impedidos de cortar os motores precocemente durante o pulso inicial.
+   - Em [`wireless/ps.c`](main/adapter/wireless/ps.c), comandos ociosos de parada (`state == 0`) enviados pelo console antes de qualquer feedback do jogo e eventos simultâneos de LED são impedidos de cortar os motores precocemente durante o pulso inicial. Comandos de parada após feedback real do jogo continuam sendo respeitados.
    - Se um comando legítimo de vibração do jogo (`state != 0`) chegar durante o pareamento, os dados reais do jogo assumem precedência imediata.
 
-2. **Eliminação de Tráfego Ocioso de Parada a 10 Hz:**
+2. **Eliminação do Reenvio Contínuo de Stop a 10 Hz:**
    - Em [`ps_spi.c`](main/wired/ps_spi.c), a rotina de ressincronização periódica a cada 6 frames foi restrita exclusivamente a vibrações ativas (`r != 0 || l != 0`).
-   - Quando o console está ocioso (`r == 0 && l == 0`), o reenvio contínuo de pacotes de parada a ~10 Hz foi eliminado, preservando a largura de banda e mantendo o link Bluetooth em repouso.
+   - Quando o console está ocioso (`r == 0 && l == 0`), o reenvio contínuo de pacotes de parada a ~10 Hz foi eliminado, utilizando apenas uma rajada finita de 6 quadros (~100 ms) pós-transição, preservando a largura de banda e mantendo o link Bluetooth em repouso com o keepalive normal de 300 ms.
 
 3. **Ajuste e Rigor na Documentação Técnica:**
    - Esclarecido o modelo de despacho *best-effort* no desligamento/reset em [`host.c`](main/bluetooth/host.c).
@@ -93,7 +108,7 @@ A versão 0.7.0 implementa 10 correções arquiteturais profundas na camada de c
 * **Restauração da Estabilidade de Conexão (Linha de Base v0.6.4):**
   - **Probe Escuro na Inicialização (`bt_hid_ps_init`):** Retornado o valor de `leds = 0x000000` nos pacotes de sondagem inicial (`ps4_set_conf`), idêntico à versão estável 0.6.4. Evita que o controle acione alta corrente de LED durante a negociação dos canais L2CAP/HCI Bluetooth, eliminando quedas de tensão na bateria e desconexões espúrias do DS4.
   - **Eliminação de Pacote Duplicado de Gatilhos:** Removido o reenvio redundante `bt_hid_cmd_ps5_set_conf` após `bt_hid_cmd_ps5_trigger_init`, aliviando o tráfego de saída do canal de interrupção na conexão.
-  - **Sequência de Conexão Fluida:** O DS4 conecta de forma suave e silenciosa, executa a respiração azul indicadora de slot (Player 1 / Player 2) e, ao término, acende suavemente no cinza calibrado `#949190` no Modo Digital. No Modo Analógico, transita imediatamente para o Vermelho autêntico (`0x00006D`). O DualSense preserva seu comportamento 100% calibrado da v0.6.10/v0.6.11.
+  - **Sequência de Conexão Fluida:** O DS4 conecta de forma suave e silenciosa, executa a respiração azul indicadora de slot (Player 1 / Player 2) e, ao término, acende suavemente no cinza calibrado `#949190` no Modo Digital. No Modo Analógico, transita imediatamente para o Vermelho autêntico (`0x00006D`). O DualSense preserva seu comportamento calibrado da v0.6.10/v0.6.11.
 
 ---
 
@@ -101,14 +116,14 @@ A versão 0.7.0 implementa 10 correções arquiteturais profundas na camada de c
 
 * **Iluminação Especializada DualShock 4 vs DualSense (PS5):**
   - **DualShock 4 com LED Cinza Neutro (#c5c1c0):** Como o controle DualShock 4 não possui indicadores luminosos de jogador independentes da barra de luz, a lightbar permanece acesa em cinza neutro suave (`#c5c1c0` / `0xC0C1C5`) durante a conexão no Modo Digital, permitindo identificar visualmente que o controle está ligado e conectado. No Modo Analógico, a barra transita para Vermelho autêntico (`0x00006D`).
-  - **DualSense (PS5) Mantido com Lightbar Desligada no Digital:** O DualSense permanece com o comportamento perfeito aprovado na v0.6.10: lightbar 100% desligada no Modo Digital com apenas os pontos discretos de identificação de jogador acesos sob o touchpad (1 ponto = P1, 2 pontos = P2), acendendo em Vermelho no Modo Analógico.
+  - **DualSense (PS5) Mantido com Lightbar Desligada no Digital:** O DualSense permanece com o comportamento esperado aprovado na v0.6.10: lightbar 100% desligada no Modo Digital com apenas os pontos discretos de identificação de jogador acesos sob o touchpad (1 ponto = P1, 2 pontos = P2), acendendo em Vermelho no Modo Analógico.
 
 ---
 
 ## Novidades e Correções da Versão 0.6.10
 
 * **Modo Digital Autêntico SCPH-1200 (Lightbar Desligada):**
-  - **Fidelidade Histórica ao DualShock Original:** No controle SCPH-1200 do PlayStation 1, o LED vermelho só acendia quando o modo Analógico estava ativo; no modo Digital, permanecia 100% apagado. A cor padrão do modo Digital foi definida como `0x000000` (desligada) para DS4 e DS5.
+  - **Fidelidade Histórica ao DualShock Original:** No controle SCPH-1200 do PlayStation 1, o LED vermelho só acendia quando o modo Analógico estava ativo; no modo Digital, permanecia apagado. A cor padrão do modo Digital foi definida como `0x000000` (desligada) para DS4 e DS5.
   - **Indicação de Conexão e Jogador Preservadas:** O DS4 executa a respiração pulsante azul indicando o número do slot e depois apaga; o DS5 exibe os pontos discretos brancos sob o touchpad (1 ponto para Player 1, 2 pontos para Player 2) sem iluminação residual na lightbar.
   - **Ativação Vermelha em Modo Analógico:** Ao ativar o modo Analógico (seja pelo botão PS ou automaticamente por jogos como Resident Evil 3), a barra luminosa acende instantaneamente no Vermelho autêntico (`0x00006D`) em ambos os controles. Ao desativar, retorna ao estado apagado.
 
@@ -168,7 +183,7 @@ A versão 0.7.0 implementa 10 correções arquiteturais profundas na camada de c
 
 ## Novidades e Correções da Versão 0.6.3
 
-* **Ativação Padrão do Indicador de Bateria Baixa (`CONFIG_BR_PS1_BATTERY_IND=y`):** O indicador luminoso de bateria fraca passa a ser ativado por padrão na compilação oficial. Em controles DualShock 4 e DualSense com nível de carga crítico (<= 20%) e sem cabo de carregamento conectado, a barra luminosa emite um pulso âmbar suave (`0x000080FF`) a cada 30 segundos. *(Nota da v0.6.4: o indicador foi desativado na versão seguinte; a afirmação de ausência de interferência no rumble não havia sido validada em hardware e há risco de corte de vibração no DS4).*
+* **Ativação Opcional do Indicador de Bateria Baixa (`CONFIG_BR_PS1_BATTERY_IND=n` no padrão):** Em compilações personalizadas com a opção ativada, controles DualShock 4 e DualSense com nível de carga crítico (<= 20%) e sem cabo de carregamento conectado emitem um pulso âmbar suave (`0x000080FF`) a cada 30 segundos. *(Nota: desativado na configuração oficial de hardware devido ao risco de corte de vibração no DS4 sem validação em hardware).*
 * **Confirmação de Desativação do Memory Card Virtual (`CONFIG_BR_PS1_MEMORY_CARD=n`):** Mantido desativado por padrão conforme especificação do projeto para adaptador dedicado de controles, preservando 128 KB de heap DMA livre para conexões Bluetooth simultâneas e máxima estabilidade.
 
 ---
@@ -241,7 +256,7 @@ A versão 0.7.0 implementa 10 correções arquiteturais profundas na camada de c
 ### 2. Transmissão Contínua de Feedback em Alta Frequência (20 ms / 50 Hz)
 * **Temporizador Watchdog dos Controles Sem Fio:** Os controladores Bluetooth modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro) possuem um temporizador interno de segurança (*watchdog*) em seus firmwares de aproximadamente 200 ms a 250 ms. Se os motores estiverem ativos e nenhum novo relatório HID Bluetooth for recebido dentro dessa janela, o controle atenua ou desliga a alimentação dos atuadores por proteção térmica e conservação de bateria.
 * **Sustentação de Eventos Hápticos Prolongados:** Em situações de vibração contínua e constante (como disparos sustentados de armas automáticas, aceleração contínua em zebras de pista ou explosões de longa duração), o console mantém os mesmos valores nos registradores de comando quadro a quadro. Na ausência de variação nos dados, a rotina de feedback pausava a transmissão por 300 ms, gerando solavancos e microcortes cíclicos causados pelo desarmamento do watchdog interno do controle.
-* **Calibração Implementada:** A rotina de transmissão Bluetooth (`bt_fb_task`) monitora atomicamente o estado ativo de vibração (`BT_DEV_RUMBLE_ON`). Enquanto qualquer controle conectado estiver vibrando, os pacotes de feedback são retransmitidos a cada **20 ms (50 Hz)** — taxa rigorosamente síncrona com os quadros de vídeo do hardware do PlayStation 1. Isso mantém o watchdog do controle continuamente alimentado, garantindo uma resposta de vibração uniforme, sólida e sem interrupções durante toda a sustentação do comando.
+* **Calibração Implementada:** A rotina de transmissão Bluetooth (`bt_fb_task`) monitora atomicamente o estado ativo de vibração (`BT_DEV_RUMBLE_ON`). Enquanto qualquer controle conectado estiver vibrando, os pacotes de feedback são retransmitidos a cada **20 ms (50 Hz)** — taxa rigorosamente síncrona com os quadros de vídeo do hardware do PlayStation 1. Isso mantém o watchdog do controle continuamente alimentado, garantindo uma resposta de vibração uniforme e reduzindo microcortes durante toda a sustentação do comando.
 
 ### 3. Interrupção Imediata de Vibração em Pausa e Menus (Comando 0x43)
 * Quando o jogo entra em pausa ou acessa telas de configuração/inventário, o console chaveia a comunicação serial para o comando `0x43`. O driver intercepta imediatamente essa transição e emite um pacote de parada forçada com comprimento zero (`data_len = 0`), desligando os motores de forma instantânea sem resíduos de rotação.
@@ -304,7 +319,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 > [!NOTE]
 > O script de atualização sem fio (`ble_ota_update.py`) requer a biblioteca Python `bleak` (`pip install bleak`).
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.1_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.2_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -313,7 +328,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.1_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.2_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)
@@ -335,7 +350,7 @@ python -m esptool --chip esp32 --port COMx -b 921600 --before default_reset --af
 ### Padrões de Feedback e Comportamento em Jogos
 O firmware foi projetado e calibrado para atender aos padrões de comunicação e feedback utilizados pela biblioteca do PlayStation (sujeito à validação física em hardware real):
 * **Efeitos de Pulso e Modulação:** Resposta de motores pesados com repouso verdadeiro nos intervalos de baixa intensidade (como batimentos cardíacos, avisos de proximidade e alertas de status).
-* **Vibração Sustentada Contínua:** Disparos prolongados de armas automáticas, aceleração contínua e superfícies acidentadas sem interrupções por watchdog.
+* **Vibração Sustentada Contínua:** Disparos prolongados de armas automáticas, aceleração contínua e superfícies acidentadas reduzindo microcortes por watchdog.
 * **Transições de Cena e Vídeos:** Preservação do modo analógico durante pausas de leitura em FMVs e telas de transição.
 * **Resposta de Impacto:** Acionamento agudo em golpes, impactos rápidos e colisões.
 
@@ -351,7 +366,7 @@ git clone --recursive https://github.com/Schickacka/BlueRetro.git
 cd BlueRetro
 
 # Gerar arquivo de versão do firmware customizado
-echo "v0.7.1 ps1-custom" > version.txt
+echo "v0.7.2 ps1-custom" > version.txt
 
 # Carregar arquivo de configuração para PlayStation
 cp configs/hw1/playstation sdkconfig
