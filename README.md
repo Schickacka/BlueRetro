@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.6.8)
+# BlueRetro — PlayStation 1 Custom Edition (v0.6.9)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -20,6 +20,14 @@
 O **BlueRetro — PlayStation 1 Custom Edition** é um firmware customizado de alta precisão para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** voltado ao console **Sony PlayStation 1** (compatível com todas as revisões de hardware: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
 
 Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi desenvolvida e mantida por **Schickacka** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200), robustez de concorrência em tempo real e estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
+
+---
+
+## Novidades e Correções da Versão 0.6.9
+
+* **Correção Definitiva da Lightbar do DualSense (PS5):**
+  - **Reversão do Macro `lightbar_setup` (`LIGHT_ON` = `0x01`):** No relatório Bluetooth `0x31` do DualSense, a constante oficial do driver Sony Linux (`hid-playstation`) define `DS_OUTPUT_LIGHTBAR_SETUP_LIGHT_ON = 0x01` (`BIT(0)`) e `DS_OUTPUT_LIGHTBAR_SETUP_LIGHT_OUT = 0x02` (`BIT(1)`). Na versão 0.6.8, `lightbar_setup` estava transmitindo `0x02` com o flag de validação `valid_flag2 = 0x02`, comandando ativamente o controle a desligar a barra luminosa (`LIGHT_OUT`). Corrigido para `BT_HIDP_PS5_LIGHTBAR_SETUP_ON = 0x01` em todos os pontos de saída (`ps5_fb_from_generic`, `bt_hid_ps5_init_callback`, `ps_send_led_only`).
+  - **Calibração Luminosa do Modo Digital:** O valor padrão de cor digital foi ajustado para `0x202020` (RGB 32, 32, 32), proporcionando um brilho branco/cinza suave nítido e perfeitamente visível através dos difusores ópticos do DualSense, contrastando imediatamente com o Vermelho (`0x00006D`) ativado no modo Analógico em jogos como Resident Evil 3.
 
 ---
 
@@ -198,7 +206,7 @@ Configuração padrão dos pinos de conexão entre a placa **ESP32 DevKit V1** e
 ### Método 1: Atualização Sem Fio via Bluetooth (OTA - Recomendado)
 Se o BlueRetro já estiver instalado no console, o procedimento pode ser realizado sem abrir o videogame e sem cabos:
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.6.8_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.6.9_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -207,7 +215,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.6.8_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.6.9_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)

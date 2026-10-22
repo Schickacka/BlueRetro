@@ -53,8 +53,8 @@ struct bt_hidp_ps4_set_conf_usb {
 
 #define BT_HIDP_PS5_SET_CONF 0x31
 
-#define BT_HIDP_PS5_LIGHTBAR_SETUP_ON   0x02
-#define BT_HIDP_PS5_LIGHTBAR_SETUP_OUT  0x01
+#define BT_HIDP_PS5_LIGHTBAR_SETUP_ON   0x01
+#define BT_HIDP_PS5_LIGHTBAR_SETUP_OUT  0x02
 
 #define BT_HIDP_PS5_VALID_FLAG2_BRIGHTNESS      0x01
 #define BT_HIDP_PS5_VALID_FLAG2_LIGHTBAR_SETUP  0x02
@@ -120,7 +120,7 @@ struct bt_hidp_ps5_set_conf {
 #ifdef CONFIG_BR_PS1_LED_DIGITAL_COLOR
 #define BR_PS1_COLOR_DIGITAL CONFIG_BR_PS1_LED_DIGITAL_COLOR
 #else
-#define BR_PS1_COLOR_DIGITAL 0x101010
+#define BR_PS1_COLOR_DIGITAL 0x202020
 #endif
 
 static inline uint32_t ps1_led_color(uint8_t is_analog) {
