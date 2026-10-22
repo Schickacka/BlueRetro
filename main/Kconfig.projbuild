@@ -282,10 +282,11 @@ menu "BlueRetro"
 
         config BR_PS1_LED_DIGITAL_COLOR
             hex "Lightbar color in Digital Mode"
-            default 0x101010
+            default 0x000000
             help
                 Lightbar color in the DS4/DS5 report byte order (0x00BBGGRR,
-                i.e. byte 0 = red). Default 0x101010 = neutral grey (#101010).
+                i.e. byte 0 = red). Default 0x000000 = OFF (dark), matching
+                authentic SCPH-1200 hardware.
 
         config BR_PS1_NIGHT_MODE
             bool "Night mode (reduced brightness)"

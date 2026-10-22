@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.6.9)
+# BlueRetro — PlayStation 1 Custom Edition (v0.6.10)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -20,6 +20,19 @@
 O **BlueRetro — PlayStation 1 Custom Edition** é um firmware customizado de alta precisão para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** voltado ao console **Sony PlayStation 1** (compatível com todas as revisões de hardware: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
 
 Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi desenvolvida e mantida por **Schickacka** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200), robustez de concorrência em tempo real e estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
+
+---
+
+## Novidades e Correções da Versão 0.6.10
+
+* **Modo Digital Autêntico SCPH-1200 (Lightbar Desligada):**
+  - **Fidelidade Histórica ao DualShock Original:** No controle SCPH-1200 do PlayStation 1, o LED vermelho só acendia quando o modo Analógico estava ativo; no modo Digital, permanecia 100% apagado. A cor padrão do modo Digital foi definida como `0x000000` (desligada) para DS4 e DS5.
+  - **Indicação de Conexão e Jogador Preservadas:** O DS4 executa a respiração pulsante azul indicando o número do slot e depois apaga; o DS5 exibe os pontos discretos brancos sob o touchpad (1 ponto para Player 1, 2 pontos para Player 2) sem iluminação residual na lightbar.
+  - **Ativação Vermelha em Modo Analógico:** Ao ativar o modo Analógico (seja pelo botão PS ou automaticamente por jogos como Resident Evil 3), a barra luminosa acende instantaneamente no Vermelho autêntico (`0x00006D`) em ambos os controles. Ao desativar, retorna ao estado apagado.
+
+* **Handshake de Reset Linux Kernel (`dualsense_reset_leds`):**
+  - **Cancelamento da Animação Azul de Boot do DualSense:** Ao conectar via Bluetooth, o DualSense executa autonomamente uma animação de boot azul e mantém a cor se não for comandado a sair. Alinhado ao driver oficial da Sony no Linux (`hid-playstation`), implementado o envio de pacote de reset de lightbar com `valid_flag2 = 0x02` (`LIGHTBAR_SETUP_CONTROL_ENABLE`) e `lightbar_setup = 0x02` (`LIGHT_OUT`) no callback de inicialização.
+  - **Isolamento de Modo Operacional:** Os relatórios de feedback e atualização subsequentes (`ps5_fb_from_generic`, `ps_send_led_only`, `bt_hid_ps5_init_callback`) mantêm `valid_flag2 = 0x00` e `lightbar_setup = 0x00`, permitindo que o controle aplique livremente os comandos de cor RGB e os LEDs indicadores de jogador sem conflito com o registrador de setup.
 
 ---
 
@@ -206,7 +219,7 @@ Configuração padrão dos pinos de conexão entre a placa **ESP32 DevKit V1** e
 ### Método 1: Atualização Sem Fio via Bluetooth (OTA - Recomendado)
 Se o BlueRetro já estiver instalado no console, o procedimento pode ser realizado sem abrir o videogame e sem cabos:
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.6.9_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.6.10_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -215,7 +228,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.6.9_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.6.10_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)
