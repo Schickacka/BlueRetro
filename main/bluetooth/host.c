@@ -216,14 +216,57 @@ static void bt_tx_task(void *param) {
     }
 }
 
+/*
+ * Apply a rumble stop while the caller holds bt_host_tx_lock(). If the normal
+ * feedback bridge cannot run (for example because the system id is unknown),
+ * zero the motor fields directly so the old nonzero output is never re-sent.
+ */
+static bool bt_host_apply_rumble_stop_locked(struct bt_dev *device, uint8_t out_idx) {
+    if (device->ids.type != BT_PS ||
+            !atomic_test_bit(&device->flags, BT_DEV_HID_INIT_DONE)) {
+        return false;
+    }
+
+    struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
+    struct raw_fb stop = {0};
+    bool changed;
+
+    stop.header.wired_id = out_idx;
+    stop.header.type = FB_TYPE_RUMBLE;
+    stop.header.data_len = 0;
+
+    changed = adapter_bridge_fb(&stop, bt_data);
+    if (!changed) {
+        if (device->ids.subtype == BT_PS5_DS) {
+            struct bt_hidp_ps5_set_conf *set_conf =
+                (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
+            set_conf->cmd = 0x03;
+            set_conf->hf_motor_pwr = 0x00;
+            set_conf->lf_motor_pwr = 0x00;
+        }
+        else {
+            struct bt_hidp_ps4_set_conf *set_conf =
+                (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
+            set_conf->hf_motor_pwr = 0x00;
+            set_conf->lf_motor_pwr = 0x00;
+        }
+        atomic_clear_bit(&device->flags, BT_DEV_RUMBLE_ON);
+        changed = true;
+    }
+    return changed;
+}
+
 static void bt_fb_task(void *param) {
     uint32_t *fb_len;
     struct raw_fb *fb_data = NULL;
     uint32_t delay_cnt = BT_FB_TASK_DELAY_CNT; /* 10ms * 30 = 300ms */
     uint32_t rumble_cnt = 0;
+    uint32_t drop_log_last = 0;
+    uint32_t drop_log_div = 0;
 
     while(1) {
         bool fb_changed = false;
+        uint32_t fb_changed_mask = 0;
         /* Look for rumble/led feedback data */
         while ((fb_data = (struct raw_fb *)queue_bss_dequeue(wired_adapter.input_q_hdl, &fb_len))) {
             struct bt_dev *device = NULL;
@@ -243,7 +286,10 @@ static void bt_fb_task(void *param) {
                 case FB_TYPE_RUMBLE:
                     if (bt_data) {
                         bt_host_tx_lock();
-                        fb_changed |= adapter_bridge_fb(fb_data, bt_data);
+                        if (adapter_bridge_fb(fb_data, bt_data)) {
+                            fb_changed = true;
+                            fb_changed_mask |= 1UL << device->ids.id;
+                        }
                         bt_host_tx_unlock();
                     }
                     break;
@@ -261,6 +307,45 @@ static void bt_fb_task(void *param) {
                     break;
             }
             queue_bss_return(wired_adapter.input_q_hdl, (uint8_t *)fb_data, fb_len);
+        }
+
+        /*
+         * A rumble stop can be dropped by the lock-free queue (full queue or
+         * lost CAS). adapter_q_fb() latches it; apply it directly here so the
+         * controller never remains in the last nonzero rumble state.
+         */
+        uint32_t stop_mask = adapter_take_rumble_stop_mask();
+        for (uint32_t out_idx = 0; out_idx < WIRED_MAX_DEV; out_idx++) {
+            if (stop_mask & (1UL << out_idx)) {
+                struct bt_dev *device = NULL;
+
+                bt_host_get_active_dev_from_out_idx(out_idx, &device);
+                if (!device) {
+                    continue;
+                }
+
+                bt_host_tx_lock();
+                bool applied = bt_host_apply_rumble_stop_locked(device, out_idx);
+                bt_host_tx_unlock();
+                if (applied) {
+                    fb_changed = true;
+                    fb_changed_mask |= 1UL << device->ids.id;
+                    printf("# FB forced rumble stop dev=%ld\n", device->ids.id);
+                }
+            }
+        }
+
+        /* Bound the diagnostic output to one line per second while drops occur. */
+        uint32_t drop_cnt = adapter_get_fb_drop_cnt();
+        if (drop_cnt != drop_log_last) {
+            if (++drop_log_div >= 100) {
+                printf("# FB queue drops: %lu\n", (unsigned long)drop_cnt);
+                drop_log_last = drop_cnt;
+                drop_log_div = 0;
+            }
+        }
+        else {
+            drop_log_div = 0;
         }
 
         /* Memory card sweep: recover dirty blocks if FB_TYPE_MEM_WRITE was dropped by queue */
@@ -299,7 +384,7 @@ static void bt_fb_task(void *param) {
                 struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
                 bool is_rumble_on = atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON);
 
-                if (keepalive || fb_changed || (is_rumble_on && rumble_tick)) {
+                if (keepalive || (fb_changed_mask & (1UL << i)) || (is_rumble_on && rumble_tick)) {
                     bt_hid_feedback(device, bt_data->base.output);
                 }
             }
@@ -556,6 +641,13 @@ int32_t bt_host_get_dev_conf(struct bt_dev **device) {
     return 0;
 }
 
+static void bt_host_rumble_stop(struct bt_dev *device) {
+    /* Best effort: the ACL link may already be gone, but the packet is queued before reset. */
+    if (bt_host_apply_rumble_stop_locked(device, device->ids.out_idx)) {
+        bt_hid_feedback(device, bt_adapter.data[device->ids.id].base.output);
+    }
+}
+
 void bt_host_reset_dev(struct bt_dev *device) {
     int32_t dev_id = 0;
 
@@ -568,6 +660,7 @@ void bt_host_reset_dev(struct bt_dev *device) {
 
 reset_dev:
     bt_host_tx_lock();
+    bt_host_rumble_stop(device);
     ps4_blink_stop(dev_id);
     /*
      * A one-shot init timer (PS3/PS4-PS5/Switch) may still be pending when

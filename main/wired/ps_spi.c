@@ -120,6 +120,7 @@ enum {
 #define PS_PORT_MAX 2
 #define MT_PORT_MAX 4
 #define PS_IDLE_RESET_US 3000000 /* 3.0s idle timeout to detect console reset */
+#define PS_RUMBLE_RESYNC_FRAMES 6 /* ~100 ms at 60 Hz; retries a lost nonzero update */
 
 struct ps_ctrl_port {
     struct spi_cfg cfg;
@@ -147,6 +148,7 @@ struct ps_ctrl_port {
     volatile uint8_t rumble_l_idx[MT_PORT_MAX];
     volatile uint8_t rumble_r_val[MT_PORT_MAX];
     volatile uint8_t rumble_l_val[MT_PORT_MAX];
+    volatile uint8_t rumble_sync[MT_PORT_MAX];
     volatile uint8_t analog_btn[MT_PORT_MAX];
     volatile uint8_t analog_lock[MT_PORT_MAX]; /* ignore button until released after reset */
     volatile uint32_t dev_desc[MT_PORT_MAX];
@@ -342,6 +344,27 @@ static void ps_analog_btn_hdlr(struct ps_ctrl_port *port, uint8_t id) {
     atomic_clear(&ps_analog_busy);
 }
 
+static bool ps_rumble_fb_send(struct ps_ctrl_port *port, uint8_t id, uint8_t r, uint8_t l) {
+    struct raw_fb fb_data = {0};
+
+    /*
+     * Normalize to the adapter's deadzone before enqueueing. This makes a
+     * stop explicit (data_len 0), which adapter_q_fb() can latch if the queue
+     * is full instead of silently losing it.
+     */
+    if ((r & 0x01) || (l >= 0x40)) {
+        fb_data.data[0] = r;
+        fb_data.data[1] = l;
+        fb_data.header.data_len = 2;
+    }
+    else {
+        fb_data.header.data_len = 0;
+    }
+    fb_data.header.wired_id = id + port->mt_first_port;
+    fb_data.header.type = FB_TYPE_RUMBLE;
+    return adapter_q_fb(&fb_data);
+}
+
 static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, uint8_t *req) {
     switch (cmd) {
         case 0x42:
@@ -359,22 +382,27 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                 break;
             }
             req++;
-            if (req[port->rumble_r_idx[id]] != port->rumble_r_val[id]
-                        || req[port->rumble_l_idx[id]] != port->rumble_l_val[id]) {
-                struct raw_fb fb_data = {0};
-                if (port->rumble_r_state[id]) {
-                    fb_data.data[0] = req[port->rumble_r_idx[id]];
+            {
+                uint8_t r = port->rumble_r_state[id] ? req[port->rumble_r_idx[id]] : 0;
+                uint8_t l = port->rumble_l_state[id] ? req[port->rumble_l_idx[id]] : 0;
+                bool changed = (r != port->rumble_r_val[id]) || (l != port->rumble_l_val[id]);
+                bool periodic = (port->rumble_sync[id] >= PS_RUMBLE_RESYNC_FRAMES);
+
+                if (!periodic) {
+                    port->rumble_sync[id]++;
                 }
-                if (port->rumble_l_state[id]) {
-                    fb_data.data[1] = req[port->rumble_l_idx[id]];
+                /*
+                 * Update the shadow only after a successful enqueue. If the
+                 * queue is full, the mismatch remains and the next poll retries.
+                 * The periodic resend also recovers a nonzero update that was
+                 * accepted by the controller but lost on the BT link.
+                 */
+                if ((changed || periodic) && ps_rumble_fb_send(port, id, r, l)) {
+                    port->rumble_r_val[id] = r;
+                    port->rumble_l_val[id] = l;
+                    port->rumble_sync[id] = 0;
                 }
-                fb_data.header.wired_id = id + port->mt_first_port;
-                fb_data.header.type = FB_TYPE_RUMBLE;
-                fb_data.header.data_len = 2;
-                adapter_q_fb(&fb_data);
             }
-            port->rumble_r_val[id] = req[port->rumble_r_idx[id]];
-            port->rumble_l_val[id] = req[port->rumble_l_idx[id]];
             __sync_synchronize();
             break;
         }
@@ -386,13 +414,15 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                     port->dev_id[id] = 0xF3;
                     /* Cut rumble immediately when entering configuration mode (pause / settings) */
                     if (port->rumble_r_val[id] || port->rumble_l_val[id]) {
-                        struct raw_fb fb_data = {0};
-                        fb_data.header.wired_id = id + port->mt_first_port;
-                        fb_data.header.type = FB_TYPE_RUMBLE;
-                        fb_data.header.data_len = 0;
-                        adapter_q_fb(&fb_data);
-                        port->rumble_r_val[id] = 0;
-                        port->rumble_l_val[id] = 0;
+                        if (ps_rumble_fb_send(port, id, 0, 0)) {
+                            port->rumble_r_val[id] = 0;
+                            port->rumble_l_val[id] = 0;
+                            port->rumble_sync[id] = 0;
+                        }
+                        else {
+                            /* Keep the shadow nonzero and make the next 0x42 retry immediately. */
+                            port->rumble_sync[id] = PS_RUMBLE_RESYNC_FRAMES;
+                        }
                     }
                 }
             }
@@ -1207,6 +1237,7 @@ void ps_spi_port_cfg(uint16_t mask) {
                     ps_ctrl_ports[i].rumble_l_idx[j] = 1;
                     ps_ctrl_ports[i].rumble_r_val[j] = 0;
                     ps_ctrl_ports[i].rumble_l_val[j] = 0;
+                    ps_ctrl_ports[i].rumble_sync[j] = 0;
                     ps_ctrl_ports[i].analog_lock[j] = 1;
                 }
                 ps_ctrl_ports[i].pkt_cnt = 0;
@@ -1311,6 +1342,7 @@ void ps_spi_poll(void) {
                     port->rumble_l_state[j] = 0;
                     port->rumble_r_val[j] = 0;
                     port->rumble_l_val[j] = 0;
+                    port->rumble_sync[j] = 0;
                     __sync_synchronize();
                     if (j == 0) {
                         gpio_set_level_iram(port->led_pin, 0);

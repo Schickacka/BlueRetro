@@ -159,6 +159,7 @@ struct ps_conn_rumble_ctx {
     uint8_t tick_cnt; /* 15 ticks * 10ms = 150ms */
     uint8_t saved_hf;
     uint8_t saved_lf;
+    uint32_t game_fb_cnt; /* increments when real game rumble arrives during the pulse */
 };
 
 static struct ps4_blink_ctx ps4_blink_ctxs[BT_MAX_DEV] = {0};
@@ -188,25 +189,43 @@ static uint8_t ps_is_analog_for_dev(struct bt_dev *device) {
 }
 
 static void ps_send_led_only(struct bt_dev *device, uint32_t color) {
+    struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
+    bool rumble_on = atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON);
+
+    /*
+     * Start from the current output instead of a zeroed report. The old code
+     * sent an LED-only report with both motors at zero, which cut an active
+     * game rumble every time the low-battery pulse changed the lightbar.
+     */
     if (device->ids.subtype == BT_PS5_DS) {
-        struct bt_hidp_ps5_set_conf set_conf = {0};
+        struct bt_hidp_ps5_set_conf set_conf =
+            *(struct bt_hidp_ps5_set_conf *)bt_data->base.output;
 
         set_conf.conf0 = 0x02;      /* overwritten with seq_tag by the wrapper */
-        set_conf.cmd = 0x00;        /* no vibration flags: LED-only report */
+        set_conf.cmd = rumble_on ? 0x03 : 0x00;
         set_conf.conf1 = 0x14;      /* lightbar + player indicator enable */
         set_conf.valid_flag2 = 0x00;
         set_conf.lightbar_setup = 0x00;
         set_conf.led_brightness = ps1_led_brightness();
         set_conf.player_leds = bt_hidp_ps5_player_led(device->ids.out_idx);
         set_conf.leds = color;
+        if (!rumble_on) {
+            set_conf.hf_motor_pwr = 0x00;
+            set_conf.lf_motor_pwr = 0x00;
+        }
         bt_hid_cmd_ps5_set_conf(device, (void *)&set_conf);
     }
     else {
-        struct bt_hidp_ps4_set_conf set_conf = {0};
+        struct bt_hidp_ps4_set_conf set_conf =
+            *(struct bt_hidp_ps4_set_conf *)bt_data->base.output;
 
         set_conf.conf0 = 0xc4;
         set_conf.conf1 = 0x03;
         set_conf.leds = color;
+        if (!rumble_on) {
+            set_conf.hf_motor_pwr = 0x00;
+            set_conf.lf_motor_pwr = 0x00;
+        }
         bt_hid_cmd_ps4_set_conf(device, (void *)&set_conf);
     }
 }
@@ -291,6 +310,12 @@ void ps4_set_pending_led(uint8_t dev_id, uint32_t color) {
     }
 }
 
+void ps_conn_rumble_game_fb(uint8_t dev_id) {
+    if (dev_id < BT_MAX_DEV && ps_conn_rumble_ctxs[dev_id].active) {
+        ps_conn_rumble_ctxs[dev_id].game_fb_cnt++;
+    }
+}
+
 void ps4_blink_stop(uint8_t dev_id) {
     if (dev_id < BT_MAX_DEV) {
         ps4_blink_ctxs[dev_id].active = false;
@@ -299,6 +324,7 @@ void ps4_blink_stop(uint8_t dev_id) {
         ps_conn_rumble_ctxs[dev_id].active = false;
         ps_conn_rumble_ctxs[dev_id].device = NULL;
         ps_conn_rumble_ctxs[dev_id].tick_cnt = 0;
+        ps_conn_rumble_ctxs[dev_id].game_fb_cnt = 0;
 #if defined(CONFIG_BR_PS1_BATTERY_IND) && CONFIG_BR_PS1_BATTERY_IND
         memset(&ps_batt_ctxs[dev_id], 0, sizeof(ps_batt_ctxs[dev_id]));
 #endif
@@ -481,6 +507,7 @@ static void ps_start_player_rumble(struct bt_dev *device) {
 
     ctx->device = device;
     ctx->tick_cnt = 0;
+    ctx->game_fb_cnt = 0;
 
     struct bt_data *bt_data = &bt_adapter.data[dev_id];
     if (device->ids.subtype == BT_PS5_DS) {
@@ -567,23 +594,23 @@ void bt_hid_ps_tick(void) {
                     rctx->active = false;
                     struct bt_data *bt_data = &bt_adapter.data[dev->ids.id];
                     /*
-                     * The pulse must never clobber real game feedback. Only
-                     * restore the pre-pulse values if the output still holds
-                     * the pulse itself (HF=0xFF, LF=0x00). If the game wrote
-                     * new rumble during the 150 ms window, its values win.
+                     * The pulse must never clobber real game feedback. The
+                     * previous value comparison was ambiguous because a real
+                     * 0xFF/0x00 game report is indistinguishable from the
+                     * pulse. Use the feedback counter instead: any real rumble
+                     * write during the 150 ms window means the game owns the
+                     * output now.
                      */
-                    if (dev->ids.subtype == BT_PS5_DS) {
-                        struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
-                        if (set_conf->hf_motor_pwr == 0xFF && set_conf->lf_motor_pwr == 0x00) {
+                    if (rctx->game_fb_cnt == 0) {
+                        if (dev->ids.subtype == BT_PS5_DS) {
+                            struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
                             set_conf->cmd = 0x03;
                             set_conf->hf_motor_pwr = rctx->saved_hf;
                             set_conf->lf_motor_pwr = rctx->saved_lf;
                             bt_hid_cmd_ps5_set_conf(dev, (void *)set_conf);
                         }
-                    }
-                    else {
-                        struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
-                        if (set_conf->hf_motor_pwr == 0xFF && set_conf->lf_motor_pwr == 0x00) {
+                        else {
+                            struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
                             set_conf->hf_motor_pwr = rctx->saved_hf;
                             set_conf->lf_motor_pwr = rctx->saved_lf;
                             bt_hid_cmd_ps4_set_conf(dev, (void *)set_conf);
@@ -648,8 +675,15 @@ void bt_hid_ps_init(struct bt_dev *device) {
 }
 
 void bt_hid_ps_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, uint32_t len) {
-    uint32_t hidp_data_len = len - (BT_HCI_H4_HDR_SIZE + BT_HCI_ACL_HDR_SIZE
-                                    + sizeof(struct bt_l2cap_hdr) + sizeof(struct bt_hidp_hdr));
+    const uint32_t hdr_len = BT_HCI_H4_HDR_SIZE + BT_HCI_ACL_HDR_SIZE
+        + sizeof(struct bt_l2cap_hdr) + sizeof(struct bt_hidp_hdr);
+
+    /* Reject truncated packets before subtracting the headers (unsigned underflow). */
+    if (len < hdr_len) {
+        printf("# PS HID short packet: len=%lu hdr=%lu\n", (unsigned long)len, (unsigned long)hdr_len);
+        return;
+    }
+    uint32_t hidp_data_len = len - hdr_len;
 
     switch (bt_hci_acl_pkt->sig_hdr.code) {
         case BT_HIDP_DATA_IN:

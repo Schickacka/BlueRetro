@@ -9,6 +9,7 @@
 #include "zephyr/types.h"
 #include "tools/util.h"
 #include "bluetooth/hidp/ps.h"
+#include "bluetooth/host.h"
 #include "adapter/config.h"
 #include "tests/cmds.h"
 #include "bluetooth/mon.h"
@@ -97,6 +98,16 @@ static uint8_t ps1_is_analog_for(const struct bt_data *bt_data) {
         return ps_spi_is_analog(bt_data->base.pids->out_idx);
     }
     return 0;
+}
+
+static bool ps_rumble_on_for(const struct bt_data *bt_data) {
+    struct bt_dev *device = NULL;
+
+    if (bt_data->base.pids &&
+            bt_host_get_dev_from_id(bt_data->base.pids->id, &device) >= 0 && device) {
+        return atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON);
+    }
+    return false;
 }
 
 #if defined(CONFIG_BR_PS1_BATTERY_IND) && CONFIG_BR_PS1_BATTERY_IND
@@ -303,8 +314,19 @@ static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
     set_conf->conf0 = 0xc4;
     set_conf->conf1 = 0x03;
 
+    /*
+     * LED-only events used to carry the previous motor bytes. That kept a
+     * stale nonzero rumble alive after the game had stopped it. If the
+     * tracked rumble state is off, clear the motors before handling LEDs.
+     */
+    if (!ps_rumble_on_for(bt_data)) {
+        set_conf->hf_motor_pwr = 0x00;
+        set_conf->lf_motor_pwr = 0x00;
+    }
+
     switch (fb_data->type) {
         case FB_TYPE_RUMBLE:
+            ps_conn_rumble_game_fb(bt_data->base.pids->id);
             if (fb_data->state) {
                 set_conf->hf_motor_pwr = fb_data->hf_pwr;
                 set_conf->lf_motor_pwr = fb_data->lf_pwr;
@@ -315,14 +337,18 @@ static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
             }
             return true;
         case FB_TYPE_PLAYER_LED:
+        {
+            uint32_t color = ps1_battery_pulse_active(bt_data->base.pids->id)
+                ? ps1_battery_color()
+                : ps1_led_color_ds4(ps1_is_analog_for(bt_data));
+
             if (!ps4_is_breathing(bt_data->base.pids->id)) {
-                uint32_t color = ps1_battery_pulse_active(bt_data->base.pids->id)
-                    ? ps1_battery_color()
-                    : ps1_led_color_ds4(ps1_is_analog_for(bt_data));
                 set_conf->leds = color;
                 return true;
             }
+            ps4_set_pending_led(bt_data->base.pids->id, color);
             return false;
+        }
         case FB_TYPE_STATUS_LED:
         {
             uint32_t color = ps1_battery_pulse_active(bt_data->base.pids->id)
@@ -345,6 +371,7 @@ static bool ps4_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
 
 static bool ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_data) {
     struct bt_hidp_ps5_set_conf *set_conf = (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
+    bool rumble_on = ps_rumble_on_for(bt_data);
 
     set_conf->conf0 = 0x02;
     set_conf->conf1 = 0x14;             /* lightbar 0x04 + player indicator 0x10 */
@@ -352,9 +379,15 @@ static bool ps5_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_d
     set_conf->lightbar_setup = 0x00;
     set_conf->led_brightness = ps1_led_brightness();
     set_conf->player_leds = bt_hidp_ps5_player_led(bt_data->base.pids->out_idx);
+    if (!rumble_on) {
+        set_conf->cmd = 0x00;
+        set_conf->hf_motor_pwr = 0x00;
+        set_conf->lf_motor_pwr = 0x00;
+    }
 
     switch (fb_data->type) {
         case FB_TYPE_RUMBLE:
+            ps_conn_rumble_game_fb(bt_data->base.pids->id);
             set_conf->cmd = 0x03; /* Enable motor_right (bit 0) and motor_left (bit 1) */
             if (fb_data->state) {
                 set_conf->hf_motor_pwr = fb_data->hf_pwr;

@@ -49,6 +49,12 @@ struct bt_adapter bt_adapter = {0};
 struct wired_adapter wired_adapter = {0};
 static uint32_t adapter_out_mask[WIRED_MAX_DEV] = {0};
 static bool rumble_mute = false;
+/* Set when a rumble stop could not enter the feedback queue. */
+static atomic_t fb_rumble_stop_mask = 0;
+/* Diagnostic counter: feedback events dropped before reaching bt_fb_task(). */
+static atomic_t fb_queue_drop_cnt = 0;
+/* Rumble transition logging is rate-limited to avoid holding the TX lock in printf(). */
+static int64_t last_rumble_log_us = 0;
 
 static uint32_t btn_id_to_btn_idx(uint8_t btn_id) {
     if (btn_id < 32) {
@@ -485,11 +491,22 @@ bool adapter_bridge_fb(struct raw_fb *fb_data, struct bt_data *bt_data) {
                 struct bt_dev *device = NULL;
                 bt_host_get_dev_from_id(bt_data->base.pids->id, &device);
                 if (device) {
+                    bool old_state = atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON);
+
                     if (fb_input.state) {
                         atomic_set_bit(&device->flags, BT_DEV_RUMBLE_ON);
                     }
                     else {
                         atomic_clear_bit(&device->flags, BT_DEV_RUMBLE_ON);
+                    }
+                    if (old_state != (bool)fb_input.state) {
+                        int64_t now = esp_timer_get_time();
+                        if (now - last_rumble_log_us >= 1000000) {
+                            last_rumble_log_us = now;
+                            printf("# FB dev=%ld rumble=%lu hf=%02lX lf=%02lX\n",
+                                (long)device->ids.id, (unsigned long)fb_input.state,
+                                (unsigned long)fb_input.hf_pwr, (unsigned long)fb_input.lf_pwr);
+                        }
                     }
                 }
             }
@@ -500,18 +517,68 @@ bool adapter_bridge_fb(struct raw_fb *fb_data, struct bt_data *bt_data) {
 
 static atomic_t fb_queue_lock = 0;
 
-void IRAM_ATTR adapter_q_fb(struct raw_fb *fb_data) {
-    /* Best effort only on fb; FB_TYPE_MEM_WRITE drops are recovered by bt_fb_task periodic mc_block_state sweep */
+static bool adapter_fb_is_rumble_stop(const struct raw_fb *fb_data) {
+    if (fb_data->header.type != FB_TYPE_RUMBLE) {
+        return false;
+    }
+    if (fb_data->header.data_len == 0) {
+        return true;
+    }
+    if (fb_data->header.data_len >= 2) {
+        /* Match ps_fb_to_generic(): HF is binary on bit 0, LF is deadzoned at 0x40. */
+        return ((fb_data->data[0] & 0x01) == 0) && (fb_data->data[1] < 0x40);
+    }
+    return false;
+}
+
+bool IRAM_ATTR adapter_q_fb(struct raw_fb *fb_data) {
+    /* Best effort only on fb; FB_TYPE_MEM_WRITE drops are recovered by bt_fb_task periodic mc_block_state sweep.
+     * A dropped rumble stop is latched so bt_fb_task can apply it outside the ISR/queue path. */
+    bool enqueued = false;
+    bool is_stop = adapter_fb_is_rumble_stop(fb_data);
+    uint8_t wired_id = fb_data->header.wired_id;
+
     if (!rumble_mute) {
         uint32_t spins = 300;
         while (!atomic_cas(&fb_queue_lock, 0, 1) && --spins) {
             __asm__ __volatile__("nop");
         }
         if (spins) {
-            queue_bss_enqueue(wired_adapter.input_q_hdl, (uint8_t *)fb_data, sizeof(*fb_data));
+            if (queue_bss_enqueue(wired_adapter.input_q_hdl, (uint8_t *)fb_data, sizeof(*fb_data)) == 0) {
+                enqueued = true;
+                /* A newer rumble event supersedes any latched stop. */
+                if (fb_data->header.type == FB_TYPE_RUMBLE && wired_id < WIRED_MAX_DEV) {
+                    atomic_clear_bit(&fb_rumble_stop_mask, wired_id);
+                }
+            }
+            else {
+                atomic_inc(&fb_queue_drop_cnt);
+                if (is_stop && wired_id < WIRED_MAX_DEV) {
+                    atomic_set_bit(&fb_rumble_stop_mask, wired_id);
+                }
+            }
             atomic_clear(&fb_queue_lock);
         }
+        else {
+            atomic_inc(&fb_queue_drop_cnt);
+            if (is_stop && wired_id < WIRED_MAX_DEV) {
+                atomic_set_bit(&fb_rumble_stop_mask, wired_id);
+            }
+        }
     }
+    else if (is_stop && wired_id < WIRED_MAX_DEV) {
+        /* Muted feedback must not swallow the final stop. */
+        atomic_set_bit(&fb_rumble_stop_mask, wired_id);
+    }
+    return enqueued;
+}
+
+uint32_t adapter_take_rumble_stop_mask(void) {
+    return (uint32_t)atomic_set(&fb_rumble_stop_mask, 0);
+}
+
+uint32_t adapter_get_fb_drop_cnt(void) {
+    return (uint32_t)atomic_get(&fb_queue_drop_cnt);
 }
 
 void adapter_toggle_fb(uint32_t wired_id, uint32_t duration_us, uint8_t lf_pwr, uint8_t hf_pwr) {

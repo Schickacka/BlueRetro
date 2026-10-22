@@ -11,6 +11,7 @@
 #include <esp32/rom/ets_sys.h>
 #include <soc/efuse_reg.h>
 #include <esp_efuse.h>
+#include <esp_system.h>
 #include "system/bare_metal_app_cpu.h"
 #include "system/core0_stall.h"
 #include "system/delay.h"
@@ -148,8 +149,27 @@ static void wl_init_task(void *arg) {
     vTaskDelete(NULL);
 }
 
+static const char *reset_reason_name(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_POWERON:   return "power-on";
+        case ESP_RST_EXT:       return "external-pin";
+        case ESP_RST_SW:        return "software";
+        case ESP_RST_PANIC:     return "panic";
+        case ESP_RST_INT_WDT:   return "interrupt-wdt";
+        case ESP_RST_TASK_WDT:  return "task-wdt";
+        case ESP_RST_WDT:       return "other-wdt";
+        case ESP_RST_DEEPSLEEP: return "deep-sleep";
+        case ESP_RST_BROWNOUT:  return "brownout";
+        case ESP_RST_SDIO:      return "sdio";
+        default:                return "unknown";
+    }
+}
+
 void app_main()
 {
+    esp_reset_reason_t reason = esp_reset_reason();
+    printf("# Reset reason: %d (%s)\n", reason, reset_reason_name(reason));
+
     adapter_init();
 
     start_app_cpu(wired_init_task);

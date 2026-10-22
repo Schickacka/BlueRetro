@@ -118,8 +118,16 @@ struct bt_hidp_ps5_set_conf {
 #define BR_PS1_COLOR_ANALOG 0x00006D
 #endif
 
-#define BR_PS1_COLOR_DS4_DIGITAL 0x00909194 /* #949190 neutral grey (-25% brightness from #c5c1c0, little-endian 0x00BBGGRR) */
+#ifdef CONFIG_BR_PS1_LED_DIGITAL_COLOR
+#define BR_PS1_COLOR_DS4_DIGITAL CONFIG_BR_PS1_LED_DIGITAL_COLOR
+#else
+#define BR_PS1_COLOR_DS4_DIGITAL 0x00909194 /* #949190 neutral grey (little-endian 0x00BBGGRR) */
+#endif
+#ifdef CONFIG_BR_PS1_LED_DIGITAL_COLOR_DS5
+#define BR_PS1_COLOR_DS5_DIGITAL CONFIG_BR_PS1_LED_DIGITAL_COLOR_DS5
+#else
 #define BR_PS1_COLOR_DS5_DIGITAL 0x000000 /* DS5 has hardware player indicator dots; lightbar OFF */
+#endif
 
 static inline uint32_t ps1_led_color_ds4(uint8_t is_analog) {
 #ifdef CONFIG_BR_PS1_NIGHT_MODE
@@ -196,6 +204,7 @@ void bt_hid_ps_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, ui
 uint8_t ps4_is_breathing(uint8_t dev_id);
 void ps4_set_pending_led(uint8_t dev_id, uint32_t color);
 void ps4_blink_stop(uint8_t dev_id);
+void ps_conn_rumble_game_fb(uint8_t dev_id);
 void bt_hid_ps_tick(void);
 
 #endif /* _BT_HIDP_PS_H_ */

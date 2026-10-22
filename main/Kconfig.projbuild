@@ -281,12 +281,21 @@ menu "BlueRetro"
                 B=0x00, the attenuated SCPH-1200 red (#6D0000).
 
         config BR_PS1_LED_DIGITAL_COLOR
-            hex "Lightbar color in Digital Mode"
+            hex "DS4 lightbar color in Digital Mode"
+            default 0x00909194
+            help
+                DS4 lightbar color in the report byte order (0x00BBGGRR, i.e.
+                byte 0 = red). The default 0x00909194 is the neutral grey used
+                by v0.6.12. Use 0x00C0C1C5 for the v0.6.11 grey, or 0x000000
+                to turn the DS4 lightbar off.
+
+        config BR_PS1_LED_DIGITAL_COLOR_DS5
+            hex "DS5 lightbar color in Digital Mode"
             default 0x000000
             help
-                Lightbar color in the DS4/DS5 report byte order (0x00BBGGRR,
-                i.e. byte 0 = red). Default 0x000000 = OFF (dark), matching
-                authentic SCPH-1200 hardware.
+                DS5 lightbar color in the report byte order (0x00BBGGRR, i.e.
+                byte 0 = red). Default 0x000000 = OFF, because the DualSense
+                has hardware player-indicator dots.
 
         config BR_PS1_NIGHT_MODE
             bool "Night mode (reduced brightness)"

@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.6.12)
+# BlueRetro — PlayStation 1 Custom Edition (v0.7.0)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -20,6 +20,48 @@
 O **BlueRetro — PlayStation 1 Custom Edition** é um firmware customizado de alta precisão para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** voltado ao console **Sony PlayStation 1** (compatível com todas as revisões de hardware: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
 
 Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi desenvolvida e mantida por **Schickacka** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200), robustez de concorrência em tempo real e estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
+
+---
+
+## Novidades e Correções da Versão 0.7.0
+
+A versão 0.7.0 implementa 10 correções arquiteturais profundas na camada de concorrência, filas de feedback e máquina de estados de iluminação e rumble:
+
+1. **Garantia de Parada de Rumble sob Pressão de Fila:**
+   - A função `adapter_q_fb()` agora retorna confirmação de inserção na fila (`bool`).
+   - Se a fila estiver cheia no momento em que o jogo comanda a parada dos motores, o evento de parada é retido em uma máscara atômica de fallback (`fb_rumble_stop_mask`) e aplicado diretamente pela tarefa `bt_fb_task`, garantindo que o controle nunca fique vibrando indefinidamente.
+   - O shadow do barramento SPI (`rumble_r_val`/`rumble_l_val`) só é atualizado após enfileiramento bem-sucedido, forçando repetição no próximo ciclo se houver descarte.
+   - Adicionada ressincronização periódica a cada ~100 ms para recuperar estados de vibração eventualmente perdidos no ar.
+
+2. **Parada Segura de Motores no Reset ou Desconexão do Dispositivo:**
+   - Em `bt_host_reset_dev()`, um relatório explícito de parada é enviado antes da liberação de memória e encerramento do driver, evitando que motores permaneçam ligados caso o controle desconecte subitamente enquanto vibrava.
+
+3. **Isolamento de Feedback por Dispositivo (`fb_changed_mask`):**
+   - Substituição da variável global `fb_changed` por uma máscara de bits por dispositivo (`fb_changed_mask`), evitando que comandos de LED ou rumble direcionados ao Jogador 1 forcem transmissões desnecessárias de pacotes ao Jogador 2.
+
+4. **Eliminação de Ambiguidade no Pulso de Conexão:**
+   - O pulso háptico de 150 ms na conexão agora utiliza um contador de eventos reais do jogo (`game_fb_cnt`). Se o jogo enviar comandos de vibração durante a inicialização, o comando do jogo prevalece e o pulso não sobrescreve os dados legítimos.
+
+5. **Higienização de Motores em Comandos de LED:**
+   - Ao processar eventos de LED (`FB_TYPE_PLAYER_LED` / `FB_TYPE_STATUS_LED`), os motores são explicitamente zerados caso o flag de rumble esteja desligado, impedindo que dados residuais no buffer reativem a vibração.
+
+6. **Configuração Unificada de Cores via Kconfig:**
+   - A opção `CONFIG_BR_PS1_LED_DIGITAL_COLOR` agora rege oficialmente a cor do DualShock 4 (padrão `#949190`).
+   - Criada a opção `CONFIG_BR_PS1_LED_DIGITAL_COLOR_DS5` (padrão `0x000000`), permitindo personalização independente mantendo o DualSense com a barra apagada e apenas os pontos de jogador ativos.
+
+7. **Preservação de Rumble Durante Avisos de Bateria:**
+   - A rotina `ps_send_led_only()` agora preserva os parâmetros ativos de vibração ao invés de zerar os motores a cada pulso de notificação de bateria baixa.
+
+8. **Retenção de Cor de Jogador Durante Animação de Conexão:**
+   - Se um comando de LED de jogador chegar enquanto o controle executa a respiração azul inicial, a cor solicitada é registrada como pendente (`ps4_set_pending_led`) e aplicada imediatamente ao término da animação.
+
+9. **Telemetria e Diagnóstico Avançado:**
+   - Registro detalhado e legível no log de inicialização do motivo de reset do ESP32 (`esp_reset_reason()`), facilitando a identificação imediata de subtensão (*brownout*), *panic* ou *watchdog*.
+   - Registro do código de motivo nos eventos de desconexão Bluetooth HCI (`reason: 0xXX`).
+   - Registro de transições de vibração e contagem de eventos descartados de fila limitados a 1 linha/segundo para não concorrer com o lock de transmissão.
+
+10. **Proteção Contra Underflow no Parser HID:**
+    - Validação rígida do comprimento mínimo de pacotes em `bt_hid_ps_hdlr()`, descartando com segurança pacotes truncados e prevenindo corrupção de memória.
 
 ---
 
@@ -239,7 +281,7 @@ Configuração padrão dos pinos de conexão entre a placa **ESP32 DevKit V1** e
 ### Método 1: Atualização Sem Fio via Bluetooth (OTA - Recomendado)
 Se o BlueRetro já estiver instalado no console, o procedimento pode ser realizado sem abrir o videogame e sem cabos:
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.6.12_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.0_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -248,7 +290,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.6.12_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.0_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)
