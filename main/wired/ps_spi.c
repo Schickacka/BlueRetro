@@ -242,6 +242,7 @@ static uint32_t get_dtr_state(uint32_t port) {
     }
     else {
         if (GPIO.in & BIT(P2_DTR_PIN)) {
+            /* Confirm high state with a second read to filter out transient capacitive crosstalk spikes */
             return (GPIO.in & BIT(P2_DTR_PIN)) ? 1 : 0;
         }
     }
@@ -320,7 +321,7 @@ static void ps_analog_btn_hdlr(struct ps_ctrl_port *port, uint8_t id) {
                     port->rumble_l_idx[id] = 1;
                     __sync_synchronize();
                     if (id == 0) {
-                        gpio_set_level_iram(ps_ctrl_ports[port->mt_first_port ? 1 : 0].led_pin, 1);
+                        gpio_set_level_iram(port->led_pin, 1);
                     }
                     fb_data.data[0] = 1;
                 }
@@ -332,7 +333,7 @@ static void ps_analog_btn_hdlr(struct ps_ctrl_port *port, uint8_t id) {
                     port->rumble_l_state[id] = 0;
                     __sync_synchronize();
                     if (id == 0) {
-                        gpio_set_level_iram(ps_ctrl_ports[port->mt_first_port ? 1 : 0].led_pin, 0);
+                        gpio_set_level_iram(port->led_pin, 0);
                     }
                     fb_data.data[0] = 0;
                 }
@@ -460,7 +461,7 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                     port->rumble_r_state[id] = 1;
                     port->rumble_l_state[id] = 1;
                     if (id == 0) {
-                        gpio_set_level_iram(ps_ctrl_ports[port->mt_first_port ? 1 : 0].led_pin, 1);
+                        gpio_set_level_iram(port->led_pin, 1);
                     }
                     fb_data.data[0] = 1;
                 }
@@ -470,7 +471,7 @@ static void ps_cmd_req_hdlr(struct ps_ctrl_port *port, uint8_t id, uint8_t cmd, 
                     port->rumble_r_state[id] = 0;
                     port->rumble_l_state[id] = 0;
                     if (id == 0) {
-                        gpio_set_level_iram(ps_ctrl_ports[port->mt_first_port ? 1 : 0].led_pin, 0);
+                        gpio_set_level_iram(port->led_pin, 0);
                     }
                     fb_data.data[0] = 0;
                 }
@@ -857,7 +858,7 @@ static void packet_end(void *arg) {
                     else {
                         ps_analog_btn_hdlr(port, 0);
                         ps_cmd_req_hdlr(port, 0, port->rx_buf[port->active_rx_buf][1], &port->rx_buf[port->active_rx_buf][2]);
-                        ps_gen_turbo_mask(&wired_adapter.data[port->id]);
+                        ps_gen_turbo_mask(&wired_adapter.data[port->mt_first_port]);
                     }
                     if (port->root_dev_type == DEV_PSX_MULTITAP) {
                         port->mt_state = port->rx_buf[port->active_rx_buf][2];

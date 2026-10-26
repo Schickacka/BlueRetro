@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.7.2)
+# BlueRetro — PlayStation 1 Custom Edition (v0.7.3)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -20,6 +20,23 @@
 O **BlueRetro — PlayStation 1 Custom Edition** é um firmware customizado de alta precisão para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** voltado ao console **Sony PlayStation 1** (compatível com todas as revisões de hardware: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
 
 Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi desenvolvida e mantida por **Schickacka** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200), robustez de concorrência em tempo real e estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
+
+---
+
+## Novidades e Correções da Versão 0.7.3
+
+A versão 0.7.3 consolida a operação em ambas as portas simultâneas e a compatibilidade universal com todas as revisões de placas-mãe do PlayStation 1 (PU-7 a PM-41):
+
+1. **Correção de Mapeamento de Turbo Mask no Multitap Virtual:**
+   - Em [`ps_spi.c`](main/wired/ps_spi.c), a geração de máscara de turbo no término do pacote foi ajustada para indexar por `port->mt_first_port` em vez de `port->id`.
+   - Quando o Multitap virtual está ativo na Porta 1 (`MT_SLOT_1`), a Porta 2 passa a calcular sua máscara estritamente no slot correspondente (slot 4 / Jogador 2), eliminando a sobrescrita indevida do buffer de turbo do Jogador 1B (slot 1) e assegurando total estabilidade no Multitap com múltiplos controles Bluetooth conectados.
+
+2. **Simetria e Robustez contra Ruído Capacitivo (Crosstalk) no DTR da Porta 2:**
+   - Em [`ps_spi.c`](main/wired/ps_spi.c), a amostragem da linha DTR/ATTN da Porta 2 (`P2_DTR_PIN`, GPIO 5) foi documentada e alinhada com a leitura de confirmação já adotada na Porta 1.
+   - Isso garante imunidade idêntica contra picos transitórios de diafonia induzidos pelas transições de clock (CLK) em cabos planos ou chicotes longos de instalação interna, cobrindo com segurança revisões como PU-7, PU-8 e PM-41.
+
+3. **Padronização do Chaveamento de LED Indicador de Modo:**
+   - No arquivo [`ps_spi.c`](main/wired/ps_spi.c), simplificado o acesso ao pino de LED com `port->led_pin`, eliminando operador ternário indireto e unificando o controle de LED em ambas as portas.
 
 ---
 
@@ -319,7 +336,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 > [!NOTE]
 > O script de atualização sem fio (`ble_ota_update.py`) requer a biblioteca Python `bleak` (`pip install bleak`).
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.2_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.3_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -328,7 +345,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.2_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.3_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)
