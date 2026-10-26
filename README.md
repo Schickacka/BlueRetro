@@ -25,18 +25,23 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 
 ## Novidades e Correções da Versão 0.7.3
 
-A versão 0.7.3 consolida a operação em ambas as portas simultâneas e a compatibilidade universal com todas as revisões de placas-mãe do PlayStation 1 (PU-7 a PM-41):
+Esta versão contém **uma correção funcional** e **uma refatoração sem mudança de comportamento**. Não há alteração de clock/timing do barramento SIO0.
 
-1. **Correção de Mapeamento de Turbo Mask no Multitap Virtual:**
-   - Em [`ps_spi.c`](main/wired/ps_spi.c), a geração de máscara de turbo no término do pacote foi ajustada para indexar por `port->mt_first_port` em vez de `port->id`.
-   - Quando o Multitap virtual está ativo na Porta 1 (`MT_SLOT_1`), a Porta 2 passa a calcular sua máscara estritamente no slot correspondente (slot 4 / Jogador 2), eliminando a sobrescrita indevida do buffer de turbo do Jogador 1B (slot 1) e assegurando total estabilidade no Multitap com múltiplos controles Bluetooth conectados.
+1. **Correção da máscara de turbo no Multitap Virtual (`MT_SLOT_1`):**
+   - Em [`ps_spi.c`](main/wired/ps_spi.c), no caminho direto (porta sem multitap), a geração da máscara de turbo passou a indexar por `port->mt_first_port` em vez de `port->id`.
+   - Com o Multitap Virtual ativo na Porta 1, a Porta 2 atende o slot 4 (**Jogador 5**) pelo caminho direto. Antes, a máscara era gravada no buffer do slot 1 (Jogador 1B), que é apenas recalculado a cada quadro, e o slot 4 nunca recebia máscara alguma — turbo e auto-fire não funcionavam nesse jogador.
+   - Sem multitap, `mt_first_port` é igual a `port->id` (0 e 1), então o uso normal de 1 ou 2 jogadores não muda. `MT_SLOT_2` e `MT_DUAL` usam o laço do multitap, que não foi alterado.
 
-2. **Simetria e Robustez contra Ruído Capacitivo (Crosstalk) no DTR da Porta 2:**
-   - Em [`ps_spi.c`](main/wired/ps_spi.c), a amostragem da linha DTR/ATTN da Porta 2 (`P2_DTR_PIN`, GPIO 5) foi documentada e alinhada com a leitura de confirmação já adotada na Porta 1.
-   - Isso garante imunidade idêntica contra picos transitórios de diafonia induzidos pelas transições de clock (CLK) em cabos planos ou chicotes longos de instalação interna, cobrindo com segurança revisões como PU-7, PU-8 e PM-41.
+2. **Padronização do Chaveamento de LED Indicador de Modo:**
+   - No arquivo [`ps_spi.c`](main/wired/ps_spi.c), as rotinas de status analógico/digital passaram a usar `port->led_pin` diretamente, em vez de recalcular o índice em `ps_ctrl_ports[]`.
+   - Refatoração sem mudança de comportamento: o pino resolvido é o mesmo.
 
-3. **Padronização do Chaveamento de LED Indicador de Modo:**
-   - No arquivo [`ps_spi.c`](main/wired/ps_spi.c), simplificado o acesso ao pino de LED com `port->led_pin`, eliminando operador ternário indireto e unificando o controle de LED em ambas as portas.
+3. **Sem alterações em:**
+   - clock/timing do SIO0;
+   - leitura do DTR (a dupla amostragem já existia na v0.7.2, nas duas portas, e não foi modificada — recebeu apenas um comentário explicativo);
+   - rumble, Memory Card virtual, identificação de controles e modo analógico.
+
+> Ajustes de deadzone, saturação ou timing do SIO exigem medição em hardware e não foram feitos nesta versão.
 
 ---
 
@@ -262,7 +267,7 @@ A versão 0.7.0 implementa 10 correções arquiteturais profundas na camada de c
 
 ## Arquitetura e Configurações de Hardware
 
-### 1. Deadzone Eletromecânica do Atuador de Baixa Frequência (0x40 / 64)
+### 1. Limiar Eletromecânico do Atuador de Baixa Frequência (0x40 / 64)
 * **Comportamento do Hardware Original:** No controle físico DualShock 1 (SCPH-1200), o motor esquerdo (baixa frequência) é composto por um contrapeso excêntrico de ferro maciço alimentado pela linha de 7.6V do console. Devido ao atrito estático e à inércia mecânica desse conjunto, comandos com sinal PWM inferior a `0x40` (64 em decimal) não produzem torque de partida suficiente para girar o motor físico, permanecendo completamente imóvel no hardware com fio original.
 * **Compatibilidade com Controles Modernos:** Jogos de PlayStation 1 frequentemente emitem valores residuais contínuos de baixa amplitude (`< 0x40`) nos registradores de feedback como ruído de fundo ou nível de linha de base. Em controladores sem fio modernos equipados com atuadores de 3.7V (que possuem limiar de partida muito baixo), esses valores residuais faziam o contrapeso girar de forma contínua em momentos nos quais o controle com fio original permanecia em repouso absoluto.
 * **Calibração Implementada:** Comandos de rotação do motor pesado com valores inferiores a `0x40` são tratados estritamente como repouso (`0x00`), acionando o motor apenas quando a intensidade exigida for igual ou superior a 64:
@@ -285,7 +290,7 @@ A versão 0.7.0 implementa 10 correções arquiteturais profundas na camada de c
 * **Sincronização na Conexão:** Ao ligar o controle no meio de uma partida na qual o console já esteja operando em modo Analógico (`0x73`), o controle entra diretamente em Analógico e acende a barra de luz na cor correspondente, sem exigir reinicialização do console ou alternância manual.
 * **Iluminação Noturna a 50%:** A barra de luz RGB opera com luminosidade equilibrada para evitar ofuscamento em ambientes com baixa iluminação:
   * **Modo Analógico Ativo:** Vermelho clássico do SCPH-1200 calibrado com atenuação de 15% (`#6D0000`).
-  * **Modo Digital:** Branco suave / cinza ambiente (`#101010`).
+  * **Modo Digital:** DualShock 4 em cinza neutro (`#949190`); DualSense com a lightbar apagada (`0x000000`) e apenas os pontos de jogador acesos.
 
 ### 6. Sincronização Atômica entre Núcleos (Dual-Core)
 * O firmware distribui suas cargas entre os dois núcleos do ESP32: o **Core 1** é responsável pelo driver baremetal SPI em tempo real (`ps_spi.c`), enquanto o **Core 0** gerencia a pilha de protocolos Bluetooth e o sistema operacional FreeRTOS (`host.c`).
@@ -383,7 +388,7 @@ git clone --recursive https://github.com/Schickacka/BlueRetro.git
 cd BlueRetro
 
 # Gerar arquivo de versão do firmware customizado
-echo "v0.7.2 ps1-custom" > version.txt
+echo "v0.7.3 ps1-custom" > version.txt
 
 # Carregar arquivo de configuração para PlayStation
 cp configs/hw1/playstation sdkconfig
