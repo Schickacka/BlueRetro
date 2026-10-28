@@ -109,7 +109,7 @@ A bateria e o probe vêm desligados de propósito: os offsets de bateria precisa
 1. ESP32 invisível ao console quando não há controle Bluetooth conectado (`hotplug = 1`).
 2. Emulação 1:1 do controle com fio: deadzone LF `0x40`, saturação HF `0xFF`, sem gate `acc_mode & ACC_RUMBLE` no comando `0x42`.
 3. LED azul N piscadas por porta (DS4/clones) + vibração de conexão de 150 ms.
-4. LED vermelho no modo analógico (`0x6D0000`) e cinza no digital (`0x101010`), configuráveis no Kconfig.
+4. LED vermelho no modo analógico (`0x6D0000`) e cinza no digital (`0x00909194`), configuráveis no Kconfig.
 5. DualSense: LEDs de player do próprio controle, barra cinza/vermelha, sem blink azul, pulso de conexão mantido.
 6. Memory card: fora do escopo desta versão; o foco é o controle; o build padrão libera 128 KB de heap.
 
