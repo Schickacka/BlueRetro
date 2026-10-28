@@ -422,19 +422,36 @@ void IRAM_ATTR adapter_init_buffer(uint8_t wired_id) {
     }
 }
 
+/*
+ * The axes in struct wireless_ctrl are in the SOURCE scale, which varies per
+ * controller: DS4/DS5 are 8-bit (-128..127), Switch Pro is 12-bit (0x800
+ * neutral, +-0x578). A fixed threshold in raw units would be ~19% on a DS4
+ * and ~1.7% on a Switch, so normalize by the axis meta (20% of travel).
+ */
+static inline bool adapter_axis_active(const struct ctrl_axis *axis) {
+    int32_t value = abs(axis->value);
+
+    if (!axis->meta) {
+        return value > 24;
+    }
+
+    int32_t span = (axis->value >= 0) ? axis->meta->abs_max : axis->meta->abs_min;
+
+    if (span <= 0) {
+        return value > 24;
+    }
+
+    return value > (span / 5);
+}
+
 static inline bool adapter_is_ctrl_active(const struct wireless_ctrl *ctrl) {
     for (uint32_t i = 0; i < ARRAY_SIZE(ctrl->btns); i++) {
         if (ctrl->btns[i].value) {
             return true;
         }
     }
-    for (uint32_t i = 0; i < 4; i++) {
-        if (abs(ctrl->axes[i].value) > 24) {
-            return true;
-        }
-    }
-    for (uint32_t i = 4; i < 6; i++) {
-        if (ctrl->axes[i].value > 35) {
+    for (uint32_t i = 0; i < 6; i++) {
+        if (adapter_axis_active(&ctrl->axes[i])) {
             return true;
         }
     }
