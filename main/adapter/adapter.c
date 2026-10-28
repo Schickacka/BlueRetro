@@ -520,6 +520,9 @@ bool adapter_bridge_fb(struct raw_fb *fb_data, struct bt_data *bt_data) {
 
                     if (fb_input.state) {
                         atomic_set_bit(&device->flags, BT_DEV_RUMBLE_ON);
+#if defined(CONFIG_BR_INACTIVITY_TIMEOUT_MIN) && (CONFIG_BR_INACTIVITY_TIMEOUT_MIN > 0)
+                        bt_host_notify_activity(bt_data->base.pids->id);
+#endif
                     }
                     else {
                         atomic_clear_bit(&device->flags, BT_DEV_RUMBLE_ON);

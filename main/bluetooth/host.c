@@ -79,7 +79,8 @@ uint32_t bt_host_get_max_lock_wait_us(void) {
 #endif
 static struct bt_dev bt_dev_conf = {0};
 static struct bt_dev bt_dev[BT_MAX_DEV] = {0};
-static int64_t dev_last_activity[BT_MAX_DEV] = {0};
+static uint32_t dev_idle_sec[BT_MAX_DEV] = {0};
+static uint32_t last_idle_check_tick = 0;
 static atomic_t bt_flags = 0;
 static uint32_t frag_size = 0;
 static uint32_t frag_offset = 0;
@@ -427,20 +428,24 @@ static void bt_host_task(void *param) {
         }
 
 #if defined(CONFIG_BR_INACTIVITY_TIMEOUT_MIN) && (CONFIG_BR_INACTIVITY_TIMEOUT_MIN > 0)
-        int64_t now = esp_timer_get_time();
-        int64_t timeout_us = (int64_t)CONFIG_BR_INACTIVITY_TIMEOUT_MIN * 60 * 1000000LL;
+        uint32_t now_tick = xTaskGetTickCount();
+        if ((uint32_t)(now_tick - last_idle_check_tick) >= pdMS_TO_TICKS(1000)) {
+            last_idle_check_tick = now_tick;
+            const uint32_t timeout_sec = CONFIG_BR_INACTIVITY_TIMEOUT_MIN * 60;
 
-        for (uint32_t i = 0; i < BT_MAX_DEV; i++) {
-            struct bt_dev *device = &bt_dev[i];
-            if (atomic_test_bit(&device->flags, BT_DEV_HID_INTR_READY)) {
-                if (dev_last_activity[i] == 0) {
-                    dev_last_activity[i] = now;
+            for (uint32_t i = 0; i < BT_MAX_DEV; i++) {
+                struct bt_dev *device = &bt_dev[i];
+                if (atomic_test_bit(&device->flags, BT_DEV_HID_INTR_READY)) {
+                    dev_idle_sec[i]++;
+                    if (dev_idle_sec[i] >= timeout_sec) {
+                        printf("# BTDEV %ld: Inactive for %d min. Powering off.\n",
+                            (long)i, CONFIG_BR_INACTIVITY_TIMEOUT_MIN);
+                        dev_idle_sec[i] = 0;
+                        bt_hci_disconnect(device);
+                    }
                 }
-                else if ((now - dev_last_activity[i]) >= timeout_us) {
-                    printf("# BTDEV %ld: Inactive for %d min. Powering off.\n",
-                        (long)i, CONFIG_BR_INACTIVITY_TIMEOUT_MIN);
-                    dev_last_activity[i] = now;
-                    bt_hci_disconnect(device);
+                else {
+                    dev_idle_sec[i] = 0;
                 }
             }
         }
@@ -680,7 +685,7 @@ void bt_host_reset_dev(struct bt_dev *device) {
     return;
 
 reset_dev:
-    dev_last_activity[dev_id] = 0;
+    dev_idle_sec[dev_id] = 0;
     bt_host_tx_lock();
     bt_host_rumble_stop(device);
     ps4_blink_stop(dev_id);
@@ -788,7 +793,7 @@ void bt_host_tx_lock(void) {
 
 void bt_host_notify_activity(uint8_t dev_id) {
     if (dev_id < BT_MAX_DEV) {
-        dev_last_activity[dev_id] = esp_timer_get_time();
+        dev_idle_sec[dev_id] = 0;
     }
 }
 
