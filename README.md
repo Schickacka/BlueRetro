@@ -192,7 +192,7 @@ git clone --recursive https://github.com/Schickacka/BlueRetro.git
 cd BlueRetro
 
 # Gerar arquivo de versão do firmware customizado
-echo "v0.7.4 ps1-custom" > version.txt
+echo "v0.7.5 ps1-custom" > version.txt
 
 # Carregar arquivo de configuração para PlayStation
 cp configs/hw1/playstation sdkconfig
