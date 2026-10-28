@@ -169,14 +169,9 @@ python -m esptool --chip esp32 --port COMx -b 921600 --before default_reset --af
 
 ## Compatibilidade de Hardware e Controles
 
-### Controles Testados
+### Controles Validados
 * **Sony DualShock 4** — oficial e clones/paralelos (CUH-ZCT1 e CUH-ZCT2).
 * **Sony DualSense (PS5)** — atuadores de precisão mapeados para baixa e alta frequência.
-
-### Controles Não Validados
-* **GameSir T4 Pro**, **GameSir T3s**, **Switch Pro**, **Xbox Wireless** e a linha
-  **8BitDo** podem ser reconhecidos pelo driver HID do firmware, mas **não foram
-  testados neste build**. Não há homologação.
 
 ### Padrões de Feedback e Comportamento em Jogos
 O firmware foi projetado e calibrado para atender aos padrões de comunicação e feedback utilizados pela biblioteca do PlayStation (sujeito à validação física em hardware real):
