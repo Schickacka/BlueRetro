@@ -355,7 +355,7 @@ static bool ps_rumble_fb_send(struct ps_ctrl_port *port, uint8_t id, uint8_t r, 
      * stop explicit (data_len 0), which adapter_q_fb() can latch if the queue
      * is full instead of silently losing it.
      */
-    if ((r & 0x01) || (l >= 0x40)) {
+    if (r || (l >= 0x40)) {
         fb_data.data[0] = r;
         fb_data.data[1] = l;
         fb_data.header.data_len = 2;

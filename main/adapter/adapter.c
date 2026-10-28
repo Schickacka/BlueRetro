@@ -554,7 +554,7 @@ static bool adapter_fb_is_rumble_stop(const struct raw_fb *fb_data) {
     }
     if (fb_data->header.data_len >= 2) {
         /* Match ps_fb_to_generic(): HF is binary on bit 0, LF is deadzoned at 0x40. */
-        return ((fb_data->data[0] & 0x01) == 0) && (fb_data->data[1] < 0x40);
+        return (fb_data->data[0] == 0) && (fb_data->data[1] < 0x40);
     }
     return false;
 }
