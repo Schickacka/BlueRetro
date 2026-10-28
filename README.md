@@ -36,7 +36,7 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 ### 2. Transmissão Contínua de Feedback em Alta Frequência (20 ms / 50 Hz)
 * **Temporizador Watchdog dos Controles Sem Fio:** Os controladores Bluetooth modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro) possuem um temporizador interno de segurança (*watchdog*) em seus firmwares de aproximadamente 200 ms a 250 ms. Se os motores estiverem ativos e nenhum novo relatório HID Bluetooth for recebido dentro dessa janela, o controle atenua ou desliga a alimentação dos atuadores por proteção térmica e conservação de bateria.
 * **Sustentação de Eventos Hápticos Prolongados:** Em situações de vibração contínua e constante (como disparos sustentados de armas automáticas, aceleração contínua em zebras de pista ou explosões de longa duração), o console mantém os mesmos valores nos registradores de comando quadro a quadro. Na ausência de variação nos dados, a rotina de feedback pausava a transmissão por 300 ms, gerando solavancos e microcortes cíclicos causados pelo desarmamento do watchdog interno do controle.
-* **Calibração Implementada:** A rotina de transmissão Bluetooth (`bt_fb_task`) monitora atomicamente o estado ativo de vibração (`BT_DEV_RUMBLE_ON`). Enquanto qualquer controle conectado estiver vibrando, os pacotes de feedback são retransmitidos a cada **20 ms (50 Hz)** — taxa rigorosamente síncrona com os quadros de vídeo do hardware do PlayStation 1. Isso mantém o watchdog do controle continuamente alimentado, garantindo uma resposta de vibração uniforme e reduzindo microcortes durante toda a sustentação do comando.
+* **Calibração Implementada:** A rotina de transmissão Bluetooth (`bt_fb_task`) monitora atomicamente o estado ativo de vibração (`BT_DEV_RUMBLE_ON`). Enquanto qualquer controle conectado estiver vibrando, os pacotes de feedback são retransmitidos a cada **20 ms (50 Hz nominais)**, por temporizador de software. Não há sincronismo com o vídeo do console: o PS1 opera a 59,94 Hz (NTSC/PAL-M) ou 50 Hz (PAL); o período de 20 ms serve apenas para manter vivo o watchdog interno do controle.
 
 ### 3. Interrupção Imediata de Vibração em Pausa e Menus (Comando 0x43)
 * Quando o jogo entra em pausa ou acessa telas de configuração/inventário, o console chaveia a comunicação serial para o comando `0x43`. O driver intercepta imediatamente essa transição e emite um pacote de parada forçada com comprimento zero (`data_len = 0`), desligando os motores de forma instantânea sem resíduos de rotação.
@@ -46,13 +46,31 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 
 ### 5. Sincronização Imediata de Modo Analógico e Iluminação Balanceada
 * **Sincronização na Conexão:** Ao ligar o controle no meio de uma partida na qual o console já esteja operando em modo Analógico (`0x73`), o controle entra diretamente em Analógico e acende a barra de luz na cor correspondente, sem exigir reinicialização do console ou alternância manual.
-* **Iluminação Noturna a 50%:** A barra de luz RGB opera com luminosidade equilibrada para evitar ofuscamento em ambientes com baixa iluminação:
-  * **Modo Analógico Ativo:** Vermelho clássico do SCPH-1200 calibrado com atenuação de 15% (`#6D0000`).
-  * **Modo Digital:** DualShock 4 em cinza neutro (`#949190`); DualSense com a lightbar apagada (`0x000000`) e apenas os pontos de jogador acesos.
+* **Cores padrão do build de release:**
+  * **Modo Analógico:** vermelho `#6D0000` (R=0x6D, ≈43% do vermelho máximo).
+  * **Modo Digital:** DualShock 4 em cinza `#949190`; DualSense com a lightbar
+    apagada (`0x000000`) e apenas os pontos de jogador acesos.
+* **Modo noturno (opcional):** só existe com `CONFIG_BR_PS1_NIGHT_MODE=y`
+  (padrão `n`). Quando ligado, divide as componentes RGB por 2 e usa o brilho
+  mínimo do DS4/DS5.
 
 ### 6. Sincronização Atômica entre Núcleos (Dual-Core)
 * O firmware distribui suas cargas entre os dois núcleos do ESP32: o **Core 1** é responsável pelo driver baremetal SPI em tempo real (`ps_spi.c`), enquanto o **Core 0** gerencia a pilha de protocolos Bluetooth e o sistema operacional FreeRTOS (`host.c`).
-* Todas as variáveis compartilhadas entre a ISR baremetal e as tarefas de background são declaradas como `volatile` e protegidas com barreiras explícitas de sincronização de memória (`__sync_synchronize()`), assegurando que as transições de estado do controle sejam visíveis de imediato em ambos os núcleos.
+* As variáveis compartilhadas entre a ISR e as tarefas usam `volatile` **mais**
+  barreiras (`__sync_synchronize()`) ou operações atômicas (`atomic_cas`) nos
+  pontos de publicação de estado. `volatile` sozinho não garante atomicidade de
+  campos multi-byte; por isso os campos de estado são de 8/32 bits alinhados e
+  as transições críticas são publicadas com barreira explícita.
+
+### 7. Desligamento Automático por Inatividade (10 min)
+
+* Um controle Bluetooth sem botão pressionado, com sticks centrados e sem rumble
+  ativo por **10 minutos** é desconectado automaticamente
+  (`CONFIG_BR_INACTIVITY_TIMEOUT_MIN`; `0` desativa).
+* O console vê o controle desaparecer: jogos que pausam ao perder o controle vão
+  pausar. Basta ligar o controle de novo (botão PS/Home) para reconectar.
+* Ajuste em `main/Kconfig.projbuild` → menu **PS1 Custom Edition** →
+  "Controller inactivity timeout in minutes".
 
 ---
 
@@ -60,34 +78,74 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 
 Configuração padrão dos pinos de conexão entre a placa **ESP32 DevKit V1** e as portas do console:
 
-| Sinal PlayStation | Pino do Console | GPIO ESP32 | Descrição e Observações |
+| Sinal PlayStation | Pino do Console | GPIO ESP32 | Observação |
 | :--- | :---: | :---: | :--- |
-| **P1 DATA (MISO)** | **Pino 1** | **GPIO 19** | Dados seriais enviados do controle para o console (Porta 1) |
-| **P1 COMMAND (MOSI)**| **Pino 2** | **GPIO 23** | Comandos enviados do console para o controle (Porta 1) |
-| **P1 ATT / DTR**   | **Pino 6** | **GPIO 34** | Linha de seleção da Porta 1 (requer resistor pull-up externo de 10k) |
-| **P1 CLOCK (SCK)** | **Pino 7** | **GPIO 18** | Linha de clock de sincronização (Porta 1) |
-| **P1 ACK / DSR**   | **Pino 9** | **GPIO 21** | Pulso de confirmação de byte recebido (Porta 1) |
-| **P2 DATA (MISO)** | **Pino 1** | **GPIO 22** | Dados seriais da Porta 2 |
-| **P2 COMMAND (MOSI)**| **Pino 2** | **GPIO 25** | Comandos seriais da Porta 2 |
-| **P2 ATT / DTR**   | **Pino 6** | **GPIO 5**  | Linha de seleção da Porta 2 |
-| **P2 CLOCK (SCK)** | **Pino 7** | **GPIO 26** | Linha de clock da Porta 2 |
-| **P2 ACK / DSR**   | **Pino 9** | **GPIO 27** | Pulso de confirmação da Porta 2 |
-| **Alimentação 3.5V**| **Pino 5** | **Pino 3.3V**| Alimentação lógica do barramento serial |
-| **GND (Terra)**    | **Pino 4** | **GND**     | Referência de terra comum |
-| **LED Analógico Porta 1** | **GPIO 12** | Nível alto (3.3V) quando a Porta 1 opera em Modo Analógico |
-| **LED Analógico Porta 2** | **GPIO 15** | Nível alto (3.3V) quando a Porta 2 opera em Modo Analógico |
-| **LED Onboard (Status BT)**| **GPIO 2** | LED azul integrado da placa (indica aguardo de conexão / atividade) |
+| **P1 DATA (MISO)** | **Pino 1** | **GPIO 19** | ESP32 → console |
+| **P1 COMMAND (MOSI)** | **Pino 2** | **GPIO 32** | Console → ESP32 |
+| **P1 ATT / DTR** | **Pino 6** | **GPIO 34** | Entrada; **pull-up externo de 10 kΩ obrigatório** (GPIO34 não tem pull-up interno) |
+| **P1 CLOCK (SCK)** | **Pino 7** | **GPIO 33** | Console → ESP32 |
+| **P1 ACK / DSR** | **Pino 9** | **GPIO 21** | ESP32 → console |
+| **P2 DATA (MISO)** | **Pino 1** | **GPIO 22** | ESP32 → console |
+| **P2 COMMAND (MOSI)** | **Pino 2** | **GPIO 27** | Console → ESP32 |
+| **P2 ATT / DTR** | **Pino 6** | **GPIO 5** | Entrada com pull-up interno |
+| **P2 CLOCK (SCK)** | **Pino 7** | **GPIO 26** | Console → ESP32 |
+| **P2 ACK / DSR** | **Pino 9** | **GPIO 25** | ESP32 → console |
+| **GND (Terra)** | **Pino 4** | **GND** | Referência comum |
+| **LED Analógico Porta 1** | — | **GPIO 12** | Nível alto em modo analógico |
+| **LED Analógico Porta 2** | — | **GPIO 15** | Nível alto em modo analógico |
+| **LED Onboard (Status BT)** | — | **GPIO 2** | LED azul da placa |
+
+> **Alimentação:** não use o pino 5 (3,5 V). Veja "Diretrizes de Alimentação".
+> A fonte da verdade dos GPIOs é `main/wired/ps_spi.c` (linhas 97–108); se a
+> tabela e o código divergirem, o código ganha.
+
+> **Proteção das linhas (exigida pelo upstream):** resistor de **33 Ω em
+> série** em cada linha de sinal e **diodo TVS para GND** no lado do console.
+> Sem isso, algumas revisões de PS1 apresentam pressionamentos aleatórios de
+> botão. O esquema está em `PS.pdf` do repositório `darthcloud/BlueRetroHW`.
+>
+> **Montagem de uma porta só:** o upstream manda fixar os pinos da porta não
+> usada (IO5/IO26/IO27 em 3,3 V e IO22/IO25 em GND) para o barramento não ficar
+> flutuando. O README do fork não cobre esse caso.
 
 ---
 
 ## Diretrizes de Alimentação
 
-1. **Alimentação Direta pela Linha de 3.5V (Pino 5 do Console):**
-   * Deve ser conectada diretamente ao pino **`3.3V`** da placa ESP32.
-   * **Importante:** Não conecte a linha de 3.5V ao pino `VIN` / `5V` do ESP32. O pino VIN passa por um regulador linear LDO (como o AMS1117-3.3), cuja queda de tensão interna (*dropout*) exige no mínimo 4.5V a 5.0V na entrada. A alimentação de 3.5V no VIN causa reinicializações espontâneas por subtensão (*brownout reset*).
-2. **Alimentação via Conversor Step-Down DC-DC:**
-   * Alternativamente, conecte um mini módulo regulador Buck DC-DC (ex.: MP1584EN) ao **Pino 3 (7.6V)** do conector do console.
-   * Ajuste o conversor para fornecer **5.0V regulados** e conecte a saída ao pino **`VIN` (5V)** da placa ESP32.
+> **Nunca alimente o ESP32 pelo pino 5 (3,5 V) do conector do controle.**
+> Essa linha vem da fonte do console, é compartilhada com a lógica das portas de
+> controle e do memory card e é protegida por fusível. O ESP32 pede picos de
+> centenas de mA (rádio Bluetooth em transmissão e calibração de RF no boot) que
+> essa linha não foi dimensionada para fornecer: a tensão afunda, causando
+> *brownout reset*, e a sobrecarga sostenida abre o fusível — o console perde as
+> portas com fio. Além disso, não há regulador nem proteção entre o pino 5 e o
+> rail de 3,3 V do ESP32, e 3,5 V está no limite superior da faixa de 3,0–3,6 V
+> do chip, sem margem para transitórios.
+
+### Fonte correta: pino 3 (7,6 V) + conversor buck DC-DC
+
+1. Ligue um buck ajustável (ex.: MP1584EN) no **pino 3 (7,6 V)** e ajuste a
+   saída para **5,0 V** (capacidade ≥ 1 A).
+2. Ligue a saída do buck no pino **`VIN` / `5V`** do ESP32. **Não** ligue no pino
+   `3.3V`: o regulador da placa (AMS1117) precisa de pelo menos 4,5 V na entrada.
+   Em placas DevKitC com AMS1117 (máximo 18 V), o próprio upstream aceita 8 V
+   direto no `VIN`; o buck é preferível porque o LDO dissipa (8 − 5) × I e esquenta.
+3. Instale **470 µF + 100 nF** junto ao ESP32 e um **fusível de 1 A** no ramo de
+   7,6 V, o mais próximo possível do ponto de derivação.
+4. O GND do console (pino 4) e o GND do ESP32 devem ser o mesmo nó.
+
+> O 7,6 V do conector é a linha **não chaveada** na maioria das revisões: com o
+> console desligado o ESP32 continua energizado. Se você precisa que ele desligue
+> junto com o console, use o pino 5 (3,5 V) **apenas como sinal de enable** de um
+> MOSFET / load switch de alta impedância — nunca como fonte de energia.
+>
+> O pino 5 pode ficar **desconectado**: ele é saída da console (alimenta a lógica
+> do controle original), não entrada. O ESP32 não precisa dele para nada.
+
+### Alternativa: 5 V externo (USB)
+
+Alimente o ESP32 por USB (5 V) e ligue ao console apenas o GND e as linhas de
+sinal. É a opção mais segura para bancada e para quem não quer mexer na fonte.
 
 ---
 
@@ -120,7 +178,7 @@ python -m esptool --chip esp32 --port COMx -b 921600 --before default_reset --af
 
 ## Compatibilidade de Hardware e Controles
 
-### Controles Homologados
+### Controles Suportados
 * **Sony DualShock 4** (todas as revisões de hardware: CUH-ZCT1 e CUH-ZCT2).
 * **Sony DualSense (PS5)** (atuadores de precisão mapeados para baixa e alta frequência).
 * **Nintendo Switch Pro Controller** e Joy-Cons.
@@ -154,6 +212,10 @@ cp configs/hw1/playstation sdkconfig
 # Compilar binários
 BR_HW=_hw1 BR_SYS=_playstation idf.py reconfigure build
 ```
+
+> Se você baixou o `Source.zip` (e não clonou com `--recursive`), rode
+> `./scripts/fetch_liblfds.sh` antes do build: o zip não traz o submódulo
+> `components/queue_bss/liblfds`.
 
 ---
 

@@ -1,5 +1,8 @@
 # BlueRetro PS1 Custom Edition — pacote para os devs
 
+> **Documento histórico da v0.6.** Não reflete a v0.7.4. Para o estado atual,
+> veja `README.md` e a release mais recente no GitHub.
+
 **Versão:** v0.6-deepseek  
 **Base:** BlueRetro v0.5.1, fork PlayStation 1 Custom Edition  
 **Data do build:** 2026-10-20  
@@ -83,10 +86,12 @@ O menu **Kconfig → PS1 Custom Edition** (`main/Kconfig.projbuild`) controla:
 - `BR_PS1_BLINK` (padrão `y`);
 - `BR_PS1_CONN_RUMBLE` (padrão `y`);
 - `BR_PS1_LED_ANALOG_COLOR` (padrão `0x00006D`);
-- `BR_PS1_LED_DIGITAL_COLOR` (padrão `0x101010`);
+- `BR_PS1_LED_DIGITAL_COLOR` (padrão `0x00909194`);
+- `BR_PS1_LED_DIGITAL_COLOR_DS5` (padrão `0x000000`);
 - `BR_PS1_NIGHT_MODE` (padrão `n`);
 - `BR_PS1_MEMORY_CARD` (padrão `n`; o MC está fora do escopo desta versão; ligar só em build standalone);
 - `BR_PS1_BATTERY_IND` (padrão `n`);
+- `BR_INACTIVITY_TIMEOUT_MIN` (padrão `10`; `0` desativa o auto power-off).
 - `BR_PS1_LATENCY_STATS` (padrão `n`);
 - `BR_PS1_LATENCY_PROBE` / `BR_PS1_LATENCY_PROBE_GPIO` (padrão `n` / `26`).
 
