@@ -949,7 +949,7 @@ static void spi_isr(void* arg) {
             }
             else if (port->rx_buf[port->active_rx_buf][0] == 0x81) {
                 port->active_port_type = PORT_TYPE_MEM;
-                if (config.out_cfg[port->id].acc_mode & ACC_MEM && mc_get_ready()) {
+                if (config.out_cfg[port->mt_first_port].acc_mode & ACC_MEM && mc_get_ready()) {
                     set_output_state(port->id, 1);
                     port->valid = 1;
                     port->tx_buf[1] = port->mc_flags;
