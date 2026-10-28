@@ -425,6 +425,26 @@ static void bt_host_task(void *param) {
             }
         }
 
+#if defined(CONFIG_BR_INACTIVITY_TIMEOUT_MIN) && (CONFIG_BR_INACTIVITY_TIMEOUT_MIN > 0)
+        int64_t now = esp_timer_get_time();
+        int64_t timeout_us = (int64_t)CONFIG_BR_INACTIVITY_TIMEOUT_MIN * 60 * 1000000LL;
+
+        for (uint32_t i = 0; i < BT_MAX_DEV; i++) {
+            struct bt_dev *device = &bt_dev[i];
+            if (atomic_test_bit(&device->flags, BT_DEV_HID_INTR_READY)) {
+                if (dev_last_activity[i] == 0) {
+                    dev_last_activity[i] = now;
+                }
+                else if ((now - dev_last_activity[i]) >= timeout_us) {
+                    printf("# BTDEV %ld: Inactive for %d min. Powering off.\n",
+                        (long)i, CONFIG_BR_INACTIVITY_TIMEOUT_MIN);
+                    dev_last_activity[i] = now;
+                    bt_hci_disconnect(device);
+                }
+            }
+        }
+#endif
+
         /* Update turbo mask for parallel system */
         wired_para_turbo_mask_hdlr();
 
@@ -659,6 +679,7 @@ void bt_host_reset_dev(struct bt_dev *device) {
     return;
 
 reset_dev:
+    dev_last_activity[dev_id] = 0;
     bt_host_tx_lock();
     bt_host_rumble_stop(device);
     ps4_blink_stop(dev_id);
@@ -761,6 +782,14 @@ void bt_host_tx_lock(void) {
 #else
         xSemaphoreTakeRecursive(bt_tx_mutex, portMAX_DELAY);
 #endif
+    }
+}
+
+static int64_t dev_last_activity[BT_MAX_DEV] = {0};
+
+void bt_host_notify_activity(uint8_t dev_id) {
+    if (dev_id < BT_MAX_DEV) {
+        dev_last_activity[dev_id] = esp_timer_get_time();
     }
 }
 

@@ -328,6 +328,15 @@ menu "BlueRetro"
             help
                 Pulses a free GPIO low on BT HID packet reception and high at SPI packet end.
 
+        config BR_INACTIVITY_TIMEOUT_MIN
+            int "Controller inactivity timeout in minutes (0 to disable)"
+            default 10
+            range 0 60
+            help
+                Automatically disconnects and powers off wireless controllers after
+                a period of inactivity (no button presses, analog sticks centered,
+                and no active rumble). Set to 0 to disable auto-sleep. Default is 10 min.
+
         config BR_PS1_LATENCY_PROBE_GPIO
             int "GPIO number for latency probe"
             depends on BR_PS1_LATENCY_PROBE

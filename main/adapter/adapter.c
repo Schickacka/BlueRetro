@@ -422,6 +422,25 @@ void IRAM_ATTR adapter_init_buffer(uint8_t wired_id) {
     }
 }
 
+static inline bool adapter_is_ctrl_active(const struct wireless_ctrl *ctrl) {
+    for (uint32_t i = 0; i < ARRAY_SIZE(ctrl->btns); i++) {
+        if (ctrl->btns[i].value) {
+            return true;
+        }
+    }
+    for (uint32_t i = 0; i < 4; i++) {
+        if (abs(ctrl->axes[i].value) > 24) {
+            return true;
+        }
+    }
+    for (uint32_t i = 4; i < 6; i++) {
+        if (ctrl->axes[i].value > 35) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void adapter_bridge(struct bt_data *bt_data) {
     uint32_t out_mask = 0;
 
@@ -430,6 +449,12 @@ void adapter_bridge(struct bt_data *bt_data) {
             /* Unsupported report */
             return;
         }
+
+#if defined(CONFIG_BR_INACTIVITY_TIMEOUT_MIN) && (CONFIG_BR_INACTIVITY_TIMEOUT_MIN > 0)
+        if (adapter_is_ctrl_active(ctrl_input)) {
+            bt_host_notify_activity(bt_data->base.pids->id);
+        }
+#endif
 
 #ifdef CONFIG_BLUERETRO_ADAPTER_INPUT_DBG
         TESTS_CMDS_LOG("\"generic_input\": {");
