@@ -436,16 +436,17 @@ static void bt_host_task(void *param) {
             for (uint32_t i = 0; i < BT_MAX_DEV; i++) {
                 struct bt_dev *device = &bt_dev[i];
                 if (atomic_test_bit(&device->flags, BT_DEV_HID_INTR_READY)) {
-                    dev_idle_sec[i]++;
-                    if (dev_idle_sec[i] >= timeout_sec) {
+                    uint32_t idle_sec = __atomic_add_fetch(&dev_idle_sec[i], 1, __ATOMIC_RELAXED);
+
+                    if (idle_sec >= timeout_sec) {
                         printf("# BTDEV %ld: Inactive for %d min. Powering off.\n",
                             (long)i, CONFIG_BR_INACTIVITY_TIMEOUT_MIN);
-                        dev_idle_sec[i] = 0;
+                        __atomic_store_n(&dev_idle_sec[i], 0, __ATOMIC_RELAXED);
                         bt_hci_disconnect(device);
                     }
                 }
                 else {
-                    dev_idle_sec[i] = 0;
+                    __atomic_store_n(&dev_idle_sec[i], 0, __ATOMIC_RELAXED);
                 }
             }
         }
@@ -685,7 +686,7 @@ void bt_host_reset_dev(struct bt_dev *device) {
     return;
 
 reset_dev:
-    dev_idle_sec[dev_id] = 0;
+    __atomic_store_n(&dev_idle_sec[dev_id], 0, __ATOMIC_RELAXED);
     bt_host_tx_lock();
     bt_host_rumble_stop(device);
     ps4_blink_stop(dev_id);
@@ -793,7 +794,7 @@ void bt_host_tx_lock(void) {
 
 void bt_host_notify_activity(uint8_t dev_id) {
     if (dev_id < BT_MAX_DEV) {
-        dev_idle_sec[dev_id] = 0;
+        __atomic_store_n(&dev_idle_sec[dev_id], 0, __ATOMIC_RELAXED);
     }
 }
 
