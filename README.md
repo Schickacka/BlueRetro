@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.7.3)
+# BlueRetro — PlayStation 1 Custom Edition (v0.7.4)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/master/docs/img/BlueRetro_logo.png" alt="BlueRetro Logo" width="300">
@@ -20,6 +20,29 @@
 O **BlueRetro — PlayStation 1 Custom Edition** é um firmware customizado de alta precisão para receptores Bluetooth baseados em **ESP32 (DevKit V1 / ESP-WROOM-32)** voltado ao console **Sony PlayStation 1** (compatível com todas as revisões de hardware: PU-7, PU-8, PU-18, PU-20, PU-22, PU-23 e PSOne PM-41).
 
 Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/BlueRetro)), esta edição foi desenvolvida e mantida por **Schickacka** com o objetivo de implementar calibrações eletromecânicas fiéis às especificações do controle DualShock original (SCPH-1200), robustez de concorrência em tempo real e estabilidade total de feedback em controladores sem fio modernos (DualShock 4, DualSense, Xbox Wireless, Switch Pro e 8BitDo).
+
+---
+
+## Novidades e Correções da Versão 0.7.4
+
+Esta versão implementa o desligamento automático de controladores sem fio por inatividade e preserva 100% da estabilidade do subsistema de emulação com barramento SPI/SIO compartilhado:
+
+1. **Desligamento Automático por Inatividade (Auto Power-Off após 10 minutos):**
+   - Implementado o parâmetro de compilação `CONFIG_BR_INACTIVITY_TIMEOUT_MIN` (definido por padrão em **10 minutos**, configurável no Kconfig entre 0 e 60 minutos, onde 0 desativa a função).
+   - Controladores sem fio conectados que permaneçam inativos recebem a instrução padronizada HCI de desligamento remoto (`BT_HCI_ERR_REMOTE_POWER_OFF`), desligando a alimentação interna do controle e conservando a carga de bateria.
+
+2. **Arquitetura de Temporização Atômica 32-bit (Anti-Race Condition Dual-Core):**
+   - Substituída a aritmética em microssegundos por um acumulador atômico em segundos `uint32_t dev_idle_sec[BT_MAX_DEV]`, operando a 1 Hz com base no FreeRTOS (`pdMS_TO_TICKS(1000)`).
+   - Elimina qualquer risco de *tear-read/write* ou *underflow* aritmético de 64 bits resultante da comunicação assíncrona entre o núcleo de rádio Bluetooth (Core 0) e a tarefa de gerenciamento de periféricos `bt_host_task` (Core 1).
+
+3. **Detecção Abrangente de Atividade em Três Níveis:**
+   - **Entradas Digitais:** Pressionamento de qualquer botão digital do controle zera o contador imediatamente.
+   - **Entradas Analógicas:** Desvios de eixos analógicos além da zona morta neutra zeram a contagem.
+   - **Feedback do Console:** Pacotes de vibração (*rumble*) emitidos pelos jogos do PS1 para o controlador também são registrados como atividade, impedindo desligamentos espúrios durante cutscenes com feedback tátil.
+
+4. **Preservação Integral de Compatibilidade:**
+   - Sem alterações no protocolo de comunicação com o PlayStation (clock/timing SPI, ACK e DTR intactos).
+   - Multitap Virtual, modos SCPH-1200 Digital/Analógico e rotinas de LED indicadoras mantidos integralmente.
 
 ---
 
@@ -341,7 +364,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 > [!NOTE]
 > O script de atualização sem fio (`ble_ota_update.py`) requer a biblioteca Python `bleak` (`pip install bleak`).
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.3_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.4_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -350,7 +373,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.3_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.4_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)
@@ -388,7 +411,7 @@ git clone --recursive https://github.com/Schickacka/BlueRetro.git
 cd BlueRetro
 
 # Gerar arquivo de versão do firmware customizado
-echo "v0.7.3 ps1-custom" > version.txt
+echo "v0.7.4 ps1-custom" > version.txt
 
 # Carregar arquivo de configuração para PlayStation
 cp configs/hw1/playstation sdkconfig
