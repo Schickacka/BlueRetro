@@ -91,7 +91,7 @@ O menu **Kconfig → PS1 Custom Edition** (`main/Kconfig.projbuild`) controla:
 - `BR_PS1_NIGHT_MODE` (padrão `n`);
 - `BR_PS1_MEMORY_CARD` (padrão `n`; o MC está fora do escopo desta versão; ligar só em build standalone);
 - `BR_PS1_BATTERY_IND` (padrão `n`);
-- `BR_INACTIVITY_TIMEOUT_MIN` (padrão `10`; `0` desativa o auto power-off).
+- `BR_INACTIVITY_TIMEOUT_MIN` (padrão `10`; `0` desativa o auto power-off);
 - `BR_PS1_LATENCY_STATS` (padrão `n`);
 - `BR_PS1_LATENCY_PROBE` / `BR_PS1_LATENCY_PROBE_GPIO` (padrão `n` / `26`).
 
