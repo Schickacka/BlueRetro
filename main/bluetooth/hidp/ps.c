@@ -379,11 +379,12 @@ static void bt_hid_ps5_init_callback(void *arg) {
 
     /* Always release the one-shot timer, even if the device changed type. */
     if (device && device->timer_hdl) {
+        esp_timer_stop(device->timer_hdl);
         esp_timer_delete(device->timer_hdl);
         device->timer_hdl = NULL;
     }
 
-    if (!device || device->ids.type != BT_PS) {
+    if (!device || device->ids.type != BT_PS || atomic_test_bit(&device->flags, BT_DEV_HID_INIT_DONE)) {
         bt_host_tx_unlock();
         return;
     }
@@ -710,6 +711,13 @@ void bt_hid_ps_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, ui
                         struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
                         struct bt_hidp_ps4_set_conf *set_conf = (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
                         bt_hid_cmd_ps4_clone_set_conf(device, set_conf);
+                        if (!atomic_test_bit(&device->flags, BT_DEV_HID_INIT_DONE)) {
+                            struct bt_hidp_ps4_set_conf ps4_wakeup = {
+                                .conf0 = 0xc0,
+                                .conf1 = 0x07,
+                            };
+                            bt_hid_cmd_ps4_set_conf(device, (void *)&ps4_wakeup);
+                        }
                     }
                     bt_host_bridge(device, bt_hci_acl_pkt->hidp_hdr.protocol, bt_hci_acl_pkt->hidp_data, hidp_data_len);
                     break;
@@ -717,6 +725,9 @@ void bt_hid_ps_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, ui
                     if (device->ids.report_type != BT_HIDP_PS4_STATUS) {
                         bt_type_update(device->ids.id, BT_PS, BT_SUBTYPE_DEFAULT);
                         device->ids.report_type = BT_HIDP_PS4_STATUS;
+                    }
+                    if (!atomic_test_bit(&device->flags, BT_DEV_HID_INIT_DONE)) {
+                        bt_hid_ps5_init_callback((void *)device);
                     }
 #ifdef CONFIG_BLUERETRO_ADAPTER_RUMBLE_TEST
                     struct bt_hidp_ps4_set_conf rumble4 = {
@@ -737,6 +748,9 @@ void bt_hid_ps_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, ui
                         device->ids.report_type = BT_HIDP_PS5_STATUS;
                         memset(bt_adapter.data[device->ids.id].base.output, 0,
                                sizeof(struct bt_hidp_ps5_set_conf));
+                    }
+                    if (!atomic_test_bit(&device->flags, BT_DEV_HID_INIT_DONE)) {
+                        bt_hid_ps5_init_callback((void *)device);
                     }
 #ifdef CONFIG_BLUERETRO_ADAPTER_RUMBLE_TEST
                     struct bt_hidp_ps5_set_conf rumble = {

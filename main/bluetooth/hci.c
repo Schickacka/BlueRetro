@@ -1547,7 +1547,12 @@ void bt_hci_evt_hdlr(struct bt_hci_pkt *bt_hci_evt_pkt) {
                     }
                 }
                 else {
+                    int32_t old_type = device->ids.type;
                     bt_hid_set_type_flags_from_name(device, (char *)remote_name_req_complete->name);
+                    if (old_type != device->ids.type && atomic_test_bit(&device->flags, BT_DEV_HID_INTR_READY)) {
+                        atomic_clear_bit(&device->flags, BT_DEV_HID_INIT_DONE);
+                        bt_hid_init(device);
+                    }
                     bt_hci_stop_inquiry();
                     if (device->ids.type == BT_HID_GENERIC || device->ids.type == BT_SW) {
                         bt_hci_cmd_read_remote_features(&device->acl_handle);
