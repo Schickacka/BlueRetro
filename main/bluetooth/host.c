@@ -79,6 +79,7 @@ uint32_t bt_host_get_max_lock_wait_us(void) {
 #endif
 static struct bt_dev bt_dev_conf = {0};
 static struct bt_dev bt_dev[BT_MAX_DEV] = {0};
+static int64_t dev_last_activity[BT_MAX_DEV] = {0};
 static atomic_t bt_flags = 0;
 static uint32_t frag_size = 0;
 static uint32_t frag_offset = 0;
@@ -784,8 +785,6 @@ void bt_host_tx_lock(void) {
 #endif
     }
 }
-
-static int64_t dev_last_activity[BT_MAX_DEV] = {0};
 
 void bt_host_notify_activity(uint8_t dev_id) {
     if (dev_id < BT_MAX_DEV) {
