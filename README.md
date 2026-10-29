@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.7.4)
+# BlueRetro — PlayStation 1 Custom Edition (v0.7.5)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/refs/heads/master/static/PNGs/BRE_Logo_Color_Outline.png" alt="BlueRetro Logo" width="300">
@@ -31,7 +31,7 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 * **Calibração Implementada:** Comandos de rotação do motor pesado com valores inferiores a `0x40` são tratados estritamente como repouso (`0x00`), acionando o motor apenas quando a intensidade exigida for igual ou superior a 64:
   $$\text{Power}_{\text{LF}} = \begin{cases} \text{raw}, & \text{se } \text{raw} \ge 0x40 \\ 0, & \text{se } \text{raw} < 0x40 \end{cases}$$
   Isso restaura a resposta tátil original do SCPH-1200 em toda a biblioteca do sistema, permitindo que efeitos modulados em pulso (como batimentos cardíacos, vibrações de advertência e passos) vibrem com impacto firme e cessem com silêncio cirúrgico entre as pulsações.
-* **Ativação do Motor de Alta Frequência:** O motor direito (leve/alta frequência) é tratado como sinal binário digital, no qual qualquer byte não nulo aciona saturação máxima (`0xFF`), garantindo resposta tátil nítida e imediata.
+* **Ativação do Motor de Alta Frequência:** O motor direito (leve/alta frequência) é tratado como sinal binário digital, no qual qualquer byte não nulo aciona saturação máxima (`0xFF`), garantindo resposta tátil nítida e imediata para qualquer intensidade de comando emitida pelo jogo.
 
 ### 2. Transmissão Contínua de Feedback em Alta Frequência (20 ms / 50 Hz)
 * **Temporizador Watchdog dos Controles Sem Fio:** Os controladores Bluetooth modernos (DualShock 4 e DualSense) possuem um temporizador interno de segurança (*watchdog*) em seus firmwares de aproximadamente 200 ms a 250 ms. Se os motores estiverem ativos e nenhum novo relatório HID Bluetooth for recebido dentro dessa janela, o controle atenua ou desliga a alimentação dos atuadores por proteção térmica e conservação de bateria.
@@ -48,29 +48,27 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 * **Sincronização na Conexão:** Ao ligar o controle no meio de uma partida na qual o console já esteja operando em modo Analógico (`0x73`), o controle entra diretamente em Analógico e acende a barra de luz na cor correspondente, sem exigir reinicialização do console ou alternância manual.
 * **Cores padrão do build de release:**
   * **Modo Analógico:** vermelho `#6D0000` (R=0x6D, ≈43% do vermelho máximo).
-  * **Modo Digital:** DualShock 4 em cinza `#949190`; DualSense com a lightbar
-    apagada (`0x000000`) e apenas os pontos de jogador acesos.
-* **Modo noturno (opcional):** só existe com `CONFIG_BR_PS1_NIGHT_MODE=y`
-  (padrão `n`). Quando ligado, divide as componentes RGB por 2 e usa o brilho
-  mínimo do DS4/DS5.
+  * **Modo Digital:** DualShock 4 em cinza `#949190`; DualSense com a lightbar apagada (`0x000000`) e apenas os pontos de jogador acesos.
+* **Modo noturno (opcional):** só existe com `CONFIG_BR_PS1_NIGHT_MODE=y` (padrão `n`). Quando ligado, divide as componentes RGB por 2 e usa o brilho mínimo do DS4/DS5.
 
 ### 6. Sincronização Atômica entre Núcleos (Dual-Core)
 * O firmware distribui suas cargas entre os dois núcleos do ESP32: o **Core 1** é responsável pelo driver baremetal SPI em tempo real (`ps_spi.c`), enquanto o **Core 0** gerencia a pilha de protocolos Bluetooth e o sistema operacional FreeRTOS (`host.c`).
-* As variáveis compartilhadas entre a ISR e as tarefas usam `volatile` **mais**
-  barreiras (`__sync_synchronize()`) ou operações atômicas (`atomic_cas`) nos
-  pontos de publicação de estado. `volatile` sozinho não garante atomicidade de
-  campos multi-byte; por isso os campos de estado são de 8/32 bits alinhados e
-  as transições críticas são publicadas com barreira explícita.
+* As variáveis compartilhadas entre a ISR e as tarefas usam `volatile` **mais** barreiras (`__sync_synchronize()`) ou operações atômicas (`atomic_cas`) nos pontos de publicação de estado. `volatile` sozinho não garante atomicidade de campos multi-byte; por isso os campos de estado são de 8/32 bits alinhados e as transições críticas são publicadas com barreira explícita.
 
 ### 7. Desligamento Automático por Inatividade (10 min)
+* Um controle Bluetooth sem botão pressionado, com sticks centrados e sem rumble ativo por **10 minutos** é desconectado automaticamente (`CONFIG_BR_INACTIVITY_TIMEOUT_MIN`; `0` desativa).
+* **Contador Atômico Thread-Safe:** A contagem de inatividade no loop de manutenção (`bt_host_task`) utiliza primitivas atômicas nativas da toolchain GCC (`__atomic_add_fetch` e `__atomic_store_n` com semântica `__ATOMIC_RELAXED`) sobre o array de estado `dev_idle_sec[BT_MAX_DEV]`, prevenindo condições de corrida e inconsistências de memória entre tarefas concorrentes do FreeRTOS.
+* **Detecção Normalizada por Amplitude de Eixo:** Em vez de limiares brutos fixos (que variavam sensivelmente dependendo da resolução nativa de cada modelo de controle), o limiar de atividade analógica é normalizado com base nos metadados de amplitude (`axis->meta->abs_max / 5`), correspondendo a exatamente 20% do curso real.
+* O console vê o controle desaparecer: jogos que pausam ao perder o controle vão pausar. Basta ligar o controle de novo (botão PS/Home) para reconectar.
+* Ajuste em `main/Kconfig.projbuild` → menu **PS1 Custom Edition** → "Controller inactivity timeout in minutes".
 
-* Um controle Bluetooth sem botão pressionado, com sticks centrados e sem rumble
-  ativo por **10 minutos** é desconectado automaticamente
-  (`CONFIG_BR_INACTIVITY_TIMEOUT_MIN`; `0` desativa).
-* O console vê o controle desaparecer: jogos que pausam ao perder o controle vão
-  pausar. Basta ligar o controle de novo (botão PS/Home) para reconectar.
-* Ajuste em `main/Kconfig.projbuild` → menu **PS1 Custom Edition** →
-  "Controller inactivity timeout in minutes".
+### 8. Reconexão e Inicialização Instantânea (DualShock 4 e DualSense)
+* **Resolução Determinística de Nome Bluetooth:** Durante a reconexão iniciada pelo próprio controle via paginação (*incoming page*), o canal de interrupção L2CAP é negociado antes da chegada do pacote de identificação de nome (`BT_HCI_EVT_REMOTE_NAME_REQ_COMPLETE`). O driver detecta a transição de tipo genérico (`BT_HID_GENERIC`) para PlayStation (`BT_PS`), redefine a flag de inicialização e invoca o inicializador nativo do driver (`bt_hid_ps_init`), garantindo que o controle nunca fique preso em modo genérico.
+* **Inicialização Imediata (0 ms de espera adicional):** Assim que o controle emite seu primeiro relatório de status completo (Report `0x11` para DualShock 4 ou Report `0x31` para DualSense), a rotina de inicialização cancela o temporizador de fallback com segurança (`esp_timer_stop` antes de `esp_timer_delete`), marca o dispositivo como pronto, aciona a vibração de confirmação, inicia o piscar da cor do jogador e disponibiliza a porta do console de forma instantânea.
+* **Recuperação de Modo Boot (Report 0x01):** Caso o DualShock 4 inicie a transmissão em modo boot genérico (Report `0x01`), o firmware emite o comando probe de transição (`0xC0`, `0x07`) para colocá-lo imediatamente em modo nativo Bluetooth.
+
+### 9. Acesso a Memory Card em Múltiplas Portas (`mt_first_port`)
+* A verificação do modo de acessórios (`acc_mode & ACC_MEM`) no driver SPI baremetal é indexada pelo slot raiz da porta física (`port->mt_first_port`), assegurando que cartões de memória virtuais ou físicos operem de forma consistente na Porta 2 independentemente da configuração de multitap.
 
 ---
 
@@ -148,7 +146,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 > [!NOTE]
 > O script de atualização sem fio (`ble_ota_update.py`) requer a biblioteca Python `bleak` (`pip install bleak`).
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.4_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.5_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -157,7 +155,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.4_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.5_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)
