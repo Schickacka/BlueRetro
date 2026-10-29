@@ -58,7 +58,7 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 ### 7. Desligamento Automático por Inatividade (10 min)
 * Um controle Bluetooth sem botão pressionado, com sticks centrados e sem rumble ativo por **10 minutos** é desconectado automaticamente (`CONFIG_BR_INACTIVITY_TIMEOUT_MIN`; `0` desativa).
 * **Contador Atômico Thread-Safe:** A contagem de inatividade no loop de manutenção (`bt_host_task`) utiliza primitivas atômicas nativas da toolchain GCC (`__atomic_add_fetch` e `__atomic_store_n` com semântica `__ATOMIC_RELAXED`) sobre o array de estado `dev_idle_sec[BT_MAX_DEV]`, prevenindo condições de corrida e inconsistências de memória entre tarefas concorrentes do FreeRTOS.
-* **Detecção Normalizada por Amplitude de Eixo:** Em vez de limiares brutos fixos (que variavam sensivelmente dependendo da resolução nativa de cada modelo de controle), o limiar de atividade analógica é normalizado com base nos metadados de amplitude (`axis->meta->abs_max / 5`), correspondendo a exatamente 20% do curso real.
+* **Detecção Normalizada por Amplitude de Eixo:** Em vez de limiares brutos fixos (que variavam sensivelmente dependendo da resolução nativa de cada modelo de controle), o limiar de atividade analógica é normalizado com base nos metadados de amplitude (`axis->meta->abs_max / 5`), correspondendo a cerca de 20% do curso real (25 unidades na escala de 8 bits).
 * O console vê o controle desaparecer: jogos que pausam ao perder o controle vão pausar. Basta ligar o controle de novo (botão PS/Home) para reconectar.
 * Ajuste em `main/Kconfig.projbuild` → menu **PS1 Custom Edition** → "Controller inactivity timeout in minutes".
 
