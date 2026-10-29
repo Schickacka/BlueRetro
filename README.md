@@ -172,7 +172,7 @@ python -m esptool --chip esp32 --port COMx -b 921600 --before default_reset --af
 * **Sony DualSense (PS5)** — atuadores de precisão mapeados para baixa e alta frequência.
 
 ### Padrões de Feedback e Comportamento em Jogos
-O firmware foi projetado e calibrado para atender aos padrões de comunicação e feedback utilizados pela biblioteca do PlayStation (sujeito à validação física em hardware real):
+O firmware foi projetado e calibrado para atender aos padrões de comunicação e feedback utilizados pela biblioteca do PlayStation:
 * **Efeitos de Pulso e Modulação:** Resposta de motores pesados com repouso verdadeiro nos intervalos de baixa intensidade (como batimentos cardíacos, avisos de proximidade e alertas de status).
 * **Vibração Sustentada Contínua:** Disparos prolongados de armas automáticas, aceleração contínua e superfícies acidentadas reduzindo microcortes por watchdog.
 * **Transições de Cena e Vídeos:** Preservação do modo analógico durante pausas de leitura em FMVs e telas de transição.
