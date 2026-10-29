@@ -417,8 +417,15 @@ void ps_fb_to_generic(int32_t dev_mode, struct raw_fb *raw_fb_data, struct gener
                  *    gameplay; on authentic hardware, the motor remains completely still until
                  *    active pulses exceed 0x40 (64).
                  */
+                /*
+                 * Active values >= 0x40 (64..255) are remapped to 85..255 to elevate
+                 * the startup floor, overcoming static friction in clones and short pulses.
+                 */
                 uint8_t hf = raw_fb_data->data[0] ? 0xFF : 0x00;
-                uint8_t lf = (raw_fb_data->data[1] >= 0x40) ? raw_fb_data->data[1] : 0x00;
+                uint8_t lf = 0;
+                if (raw_fb_data->data[1] >= 0x40) {
+                    lf = 85 + (((uint32_t)(raw_fb_data->data[1] - 64) * 170 + 95) / 191);
+                }
 
                 fb_data->state = (hf || lf) ? 1 : 0;
                 fb_data->hf_pwr = hf;
