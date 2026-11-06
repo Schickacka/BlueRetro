@@ -337,17 +337,6 @@ menu "BlueRetro"
                 a period of inactivity (no button presses, analog sticks centered,
                 and no active rumble). Set to 0 to disable auto-sleep. Default is 10 min.
 
-        config BR_PS1_CONSOLE_OFF_TIMEOUT_S
-            int "Power off controllers N seconds after the console stops polling (0 disables)"
-            default 5
-            range 0 60
-            help
-                When the PlayStation stops polling the controller bus (console powered
-                off or held in reset), disconnect and power off the wireless controllers
-                after this many seconds, mirroring a controller plugged straight into
-                the console. Only fires if the console was seen polling since boot.
-                Set to 0 to disable.
-
         config BR_PS1_LATENCY_PROBE_GPIO
             int "GPIO number for latency probe"
             depends on BR_PS1_LATENCY_PROBE
