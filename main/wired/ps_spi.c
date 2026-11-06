@@ -27,12 +27,18 @@
 #include "adapter/wired/ps.h"
 #include "wired_bare.h"
 #include "ps_spi.h"
-#if defined(CONFIG_BR_PS1_LATENCY_STATS)
 #include "bluetooth/host.h"
-#endif
 
 static uint32_t ps_idle_reset_ccnt = 0;
 #include "sdkconfig.h"
+
+#if CONFIG_BR_PS1_CONSOLE_OFF_TIMEOUT_S > 0
+/* Console-off detection: power off wireless controllers when the console
+ * stops polling the bus (console powered off or held in reset). */
+static int64_t ps_bus_alive_us = 0;
+static bool ps_console_seen = false;
+static bool ps_power_off_done = false;
+#endif
 
 enum {
     DEV_NONE = 0,
@@ -1048,6 +1054,11 @@ static unsigned isr_dispatch(unsigned cause) {
 void ps_spi_init(uint32_t package) {
     config_set_rst_bare_core(true);
     ps_idle_reset_ccnt = 3 * (CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * 1000000);
+#if CONFIG_BR_PS1_CONSOLE_OFF_TIMEOUT_S > 0
+    ps_bus_alive_us = esp_timer_get_time();
+    ps_console_seen = false;
+    ps_power_off_done = false;
+#endif
 #if defined(CONFIG_BR_PS1_LATENCY_PROBE)
     gpio_config_t probe_conf = {
         .pin_bit_mask = 1ULL << CONFIG_BR_PS1_LATENCY_PROBE_GPIO,
@@ -1325,6 +1336,33 @@ void ps_spi_poll(void) {
             break;
         }
     }
+
+#if CONFIG_BR_PS1_CONSOLE_OFF_TIMEOUT_S > 0
+    /*
+     * Console-off detection: the console polls the controller bus continuously
+     * while it is powered on. If polling stops for
+     * CONFIG_BR_PS1_CONSOLE_OFF_TIMEOUT_S seconds, and the console was seen
+     * polling since boot, then the console was powered off or is held in
+     * reset. Power the wireless controllers off, exactly as a controller
+     * plugged straight into the console would be.
+     */
+    {
+        int64_t now_us = esp_timer_get_time();
+
+        if (console_bus_alive) {
+            ps_bus_alive_us = now_us;
+            ps_console_seen = true;
+            ps_power_off_done = false;
+        }
+        else if (ps_console_seen && !ps_power_off_done &&
+                 (now_us - ps_bus_alive_us) >= (int64_t)CONFIG_BR_PS1_CONSOLE_OFF_TIMEOUT_S * 1000000) {
+            ps_power_off_done = true;
+            printf("# PS1: console bus idle for %d s, powering off wireless controllers\n",
+                CONFIG_BR_PS1_CONSOLE_OFF_TIMEOUT_S);
+            bt_host_disconnect_all_power_off();
+        }
+    }
+#endif
 
     for (uint32_t i = 0; i < PS_PORT_MAX; i++) {
         struct ps_ctrl_port *port = &ps_ctrl_ports[i];

@@ -576,13 +576,17 @@ uint32_t bt_host_get_flag_dev_cnt(uint32_t flag) {
     return cnt;
 }
 
-void bt_host_disconnect_all(void) {
-    printf("# %s BOOT SW pressed, DISCONN all devices!\n", __FUNCTION__);
+void bt_host_disconnect_all_power_off(void) {
     for (uint32_t i = 0; i < BT_MAX_DEV; i++) {
         if (atomic_test_bit(&bt_dev[i].flags, BT_DEV_DEVICE_FOUND)) {
             bt_hci_disconnect(&bt_dev[i]);
         }
     }
+}
+
+void bt_host_disconnect_all(void) {
+    printf("# %s BOOT SW pressed, DISCONN all devices!\n", __FUNCTION__);
+    bt_host_disconnect_all_power_off();
 }
 
 int32_t bt_host_get_new_dev(struct bt_dev **device) {
