@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.7.5.1)
+# BlueRetro — PlayStation 1 Custom Edition (v0.7.6)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/refs/heads/master/static/PNGs/BRE_Logo_Color_Outline.png" alt="BlueRetro Logo" width="300">
@@ -69,6 +69,13 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 
 ### 9. Acesso a Memory Card em Múltiplas Portas (`mt_first_port`)
 * A verificação do modo de acessórios (`acc_mode & ACC_MEM`) no driver SPI baremetal é indexada pelo slot raiz da porta física (`port->mt_first_port`), assegurando que cartões de memória virtuais ou físicos operem de forma consistente na Porta 2 independentemente da configuração de multitap.
+
+### 10. Desligamento do Controle quando o Console Desliga (5 s)
+* **Detecção de Console Desligado:** Com o console ligado, o PlayStation faz polling do barramento de controle continuamente. Quando o console é desligado (ou fica preso em reset), esse polling para. O firmware já detectava esse silêncio em 3,0 s para reverter os controles ao modo digital (§4); agora o mesmo sinal também desliga os controles sem fio.
+* **Desligamento em 5 s:** Após `CONFIG_BR_PS1_CONSOLE_OFF_TIMEOUT_S` segundos (padrão **5**) sem nenhum pacote em nenhuma porta, o adaptador envia `HCI Disconnect` com razão `REMOTE_POWER_OFF` (`0x15`), a mesma usada pelo desligamento por inatividade da §7. O DualShock 4 / DualSense apaga o LED e entra em standby, como aconteceria com um controle com fio ligado direto no console.
+* **Só dispara se o console já foi visto:** a detecção exige que o console tenha feito polling ao menos uma vez desde o boot. Usar o adaptador apenas com alimentação USB, sem console ligado, não desliga os controles.
+* **Não afeta o jogo em andamento:** pulsos curtos de silêncio (reset físico, transições de tela) ficam abaixo do limiar. Ajuste em `main/Kconfig.projbuild` → menu **PS1 Custom Edition** → "Power off controllers N seconds after the console stops polling"; `0` desativa.
+* Para religar, basta acender o console e pressionar PS/Home no controle — a reconexão é a mesma da §8.
 
 ---
 
@@ -146,7 +153,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 > [!NOTE]
 > O script de atualização sem fio (`ble_ota_update.py`) requer a biblioteca Python `bleak` (`pip install bleak`).
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.5.1_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.6_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -155,7 +162,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.5.1_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.6_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)
@@ -190,7 +197,7 @@ git clone --recursive https://github.com/Schickacka/BlueRetro.git
 cd BlueRetro
 
 # Gerar arquivo de versão do firmware customizado
-echo "v0.7.5.1 ps1-custom" > version.txt
+echo "v0.7.6 ps1-custom" > version.txt
 
 # Carregar arquivo de configuração para PlayStation
 cp configs/hw1/playstation sdkconfig
