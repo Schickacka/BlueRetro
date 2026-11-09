@@ -1432,6 +1432,7 @@ void bt_hci_evt_hdlr(struct bt_hci_pkt *bt_hci_evt_pkt) {
                     printf("dev: %ld acl_handle: 0x%04X\n", device->ids.id, device->acl_handle);
                     bt_mon_log(true, "dev: %ld acl_handle: 0x%04X\n", device->ids.id, device->acl_handle);
                     bt_hci_cmd_le_set_adv_disable(NULL);
+                    bt_hci_write_link_supervision_timeout(device);
                     bt_hci_cmd_remote_name_request(device->remote_bdaddr);
                 }
             }
