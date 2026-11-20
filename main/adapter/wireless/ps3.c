@@ -8,6 +8,7 @@
 #include "tools/util.h"
 #include "tests/cmds.h"
 #include "bluetooth/mon.h"
+#include "wired/ps_spi.h"
 #include "ps3.h"
 #include "bluetooth/hidp/ps3.h"
 
@@ -138,30 +139,36 @@ int32_t ps3_to_generic(struct bt_data *bt_data, struct wireless_ctrl *ctrl_data)
 
 bool ps3_fb_from_generic(struct generic_fb *fb_data, struct bt_data *bt_data) {
     struct bt_hidp_ps3_set_conf *set_conf = (struct bt_hidp_ps3_set_conf *)bt_data->base.output;
-    bool ret = true;
+    struct bt_hidp_ps3_set_conf prev = *set_conf;
 
     switch (fb_data->type) {
         case FB_TYPE_RUMBLE:
             if (fb_data->state) {
-                set_conf->hf_lf_motors_enable = 0x01;
+                set_conf->hf_motor_pwr = (fb_data->hf_pwr) ? 0x01 : 0x00;
+                set_conf->hf_motor_len = 0xFF;
 
                 set_conf->lf_motor_pwr = fb_data->lf_pwr;
-                set_conf->lf_motor_len = (fb_data->lf_pwr) ? 0xFF : 0x00;
-
-                set_conf->hf_motor_len = (fb_data->hf_pwr > 128) ? 0xFF : 0x00;
+                set_conf->lf_motor_len = 0xFF;
             }
             else {
-                set_conf->hf_lf_motors_enable = 0x00;
+                set_conf->hf_motor_pwr = 0x00;
+                set_conf->hf_motor_len = 0x00;
 
                 set_conf->lf_motor_pwr = 0x00;
                 set_conf->lf_motor_len = 0x00;
-
-                set_conf->hf_motor_len = 0x00;
             }
             break;
         case FB_TYPE_PLAYER_LED:
             set_conf->leds = (led_dev_id_map[bt_data->base.pids->out_idx] << 1);
+            if (wired_adapter.system_id == PSX || wired_adapter.system_id == PS2) {
+                bt_hid_ps3_set_led_mode(set_conf, ps_spi_is_analog(bt_data->base.pids->out_idx));
+            }
             break;
+        case FB_TYPE_STATUS_LED:
+            bt_hid_ps3_set_led_mode(set_conf, fb_data->led);
+            break;
+        default:
+            return false;
     }
-    return ret;
+    return memcmp(&prev, set_conf, sizeof(*set_conf)) != 0;
 }

@@ -33,6 +33,7 @@
 #include "adapter/wired/wired.h"
 #include "adapter/hid_parser.h"
 #include "bluetooth/hidp/ps.h"
+#include "bluetooth/hidp/ps3.h"
 
 #define BT_TX 0
 #define BT_RX 1
@@ -224,7 +225,7 @@ static void bt_tx_task(void *param) {
  * zero the motor fields directly so the old nonzero output is never re-sent.
  */
 static bool bt_host_apply_rumble_stop_locked(struct bt_dev *device, uint8_t out_idx) {
-    if (device->ids.type != BT_PS ||
+    if ((device->ids.type != BT_PS && device->ids.type != BT_PS3) ||
             !atomic_test_bit(&device->flags, BT_DEV_HID_INIT_DONE)) {
         return false;
     }
@@ -239,21 +240,36 @@ static bool bt_host_apply_rumble_stop_locked(struct bt_dev *device, uint8_t out_
 
     changed = adapter_bridge_fb(&stop, bt_data);
     if (!changed) {
-        if (device->ids.subtype == BT_PS5_DS) {
-            struct bt_hidp_ps5_set_conf *set_conf =
-                (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
-            set_conf->cmd = 0x03;
-            set_conf->hf_motor_pwr = 0x00;
-            set_conf->lf_motor_pwr = 0x00;
+        if (device->ids.type == BT_PS3) {
+            struct bt_hidp_ps3_set_conf *set_conf =
+                (struct bt_hidp_ps3_set_conf *)bt_data->base.output;
+            if (set_conf->hf_motor_len || set_conf->hf_motor_pwr ||
+                    set_conf->lf_motor_len || set_conf->lf_motor_pwr) {
+                set_conf->hf_motor_len = 0x00;
+                set_conf->hf_motor_pwr = 0x00;
+                set_conf->lf_motor_len = 0x00;
+                set_conf->lf_motor_pwr = 0x00;
+                changed = true;
+            }
+            atomic_clear_bit(&device->flags, BT_DEV_RUMBLE_ON);
         }
         else {
-            struct bt_hidp_ps4_set_conf *set_conf =
-                (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
-            set_conf->hf_motor_pwr = 0x00;
-            set_conf->lf_motor_pwr = 0x00;
+            if (device->ids.subtype == BT_PS5_DS) {
+                struct bt_hidp_ps5_set_conf *set_conf =
+                    (struct bt_hidp_ps5_set_conf *)bt_data->base.output;
+                set_conf->cmd = 0x03;
+                set_conf->hf_motor_pwr = 0x00;
+                set_conf->lf_motor_pwr = 0x00;
+            }
+            else {
+                struct bt_hidp_ps4_set_conf *set_conf =
+                    (struct bt_hidp_ps4_set_conf *)bt_data->base.output;
+                set_conf->hf_motor_pwr = 0x00;
+                set_conf->lf_motor_pwr = 0x00;
+            }
+            atomic_clear_bit(&device->flags, BT_DEV_RUMBLE_ON);
+            changed = true;
         }
-        atomic_clear_bit(&device->flags, BT_DEV_RUMBLE_ON);
-        changed = true;
     }
     return changed;
 }
@@ -379,6 +395,7 @@ static void bt_fb_task(void *param) {
 
         bt_host_tx_lock();
         bt_hid_ps_tick();
+        bt_hid_ps3_tick();
         for (uint32_t i = 0; i < BT_MAX_DEV; i++) {
             struct bt_dev *device = &bt_dev[i];
 
@@ -386,7 +403,18 @@ static void bt_fb_task(void *param) {
                 struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
                 bool is_rumble_on = atomic_test_bit(&device->flags, BT_DEV_RUMBLE_ON);
 
-                if (keepalive || (fb_changed_mask & (1UL << i)) || (is_rumble_on && rumble_tick)) {
+                if (device->ids.type == BT_PS3) {
+                    /*
+                     * DS3 uses synchronous SET_REPORT (0x52) on the HID control
+                     * channel with duration=0xFF (runs continuously in hardware).
+                     * Send only on actual state changes; flow control, pacing,
+                     * and brief stop hold-off live in bt_hid_ps3.
+                     */
+                    if (fb_changed_mask & (1UL << i)) {
+                        bt_hid_feedback(device, bt_data->base.output);
+                    }
+                }
+                else if (keepalive || (fb_changed_mask & (1UL << i)) || (is_rumble_on && rumble_tick)) {
                     bt_hid_feedback(device, bt_data->base.output);
                 }
             }
@@ -690,6 +718,7 @@ reset_dev:
     bt_host_tx_lock();
     bt_host_rumble_stop(device);
     ps4_blink_stop(dev_id);
+    bt_hid_ps3_reset(dev_id);
     /*
      * A one-shot init timer (PS3/PS4-PS5/Switch) may still be pending when
      * the controller disconnects. Free it before memset() clears timer_hdl;
