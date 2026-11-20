@@ -11,17 +11,20 @@
 #include "wired/ps_spi.h"
 #include "ps3.h"
 
-#define PS3_TX_MIN_INTERVAL_US   20000  /* 20 ms min spacing after previous SET_REPORT */
-#define PS3_TX_HANDSHAKE_TMO_US  80000  /* 80 ms watchdog if HIDP_HANDSHAKE is missed */
+#define PS3_TX_MIN_INTERVAL_US   35000  /* 35 ms min spacing (safely above DS3 15-30 ms drop zone) */
+#define PS3_TX_HANDSHAKE_TMO_US 100000  /* 100 ms watchdog if HIDP_HANDSHAKE is missed */
 #define PS3_STOP_HOLD_US         45000  /* 45 ms hold-off on motor stop to bridge 1-2 frame burst gaps */
+#define PS3_STOP_CONFIRM_US     150000  /* 150 ms single confirmation STOP so motors never stick */
 
 struct ps3_tx_ctx {
     bool valid_sent;
     bool in_flight;
     bool dirty;
     bool stop_pending;
+    bool stop_confirm_pending;
     int64_t last_tx_us;
     int64_t stop_req_us;
+    int64_t stop_confirm_us;
     struct bt_hidp_ps3_set_conf last_sent;
 };
 
@@ -111,19 +114,31 @@ static bool ps3_conf_leds_changed(const struct bt_hidp_ps3_set_conf *a, const st
     return (a->leds != b->leds) || (memcmp(a->led, b->led, sizeof(a->led)) != 0);
 }
 
-static void bt_hid_cmd_ps3_send_now(struct bt_dev *device, void *report) {
+static void bt_hid_cmd_ps3_send_now(struct bt_dev *device, void *report, bool is_confirm) {
     struct bt_hidp_ps3_set_conf *set_conf = (struct bt_hidp_ps3_set_conf *)bt_hid_pkt_tmp.hidp_data;
     memcpy((void *)set_conf, report, sizeof(*set_conf));
     bt_hid_cmd(device->acl_handle, device->ctrl_chan.dcid, BT_HIDP_SET_OUT, BT_HIDP_PS3_SET_CONF, sizeof(*set_conf));
 
     if (device->ids.id < BT_MAX_DEV) {
         struct ps3_tx_ctx *ctx = &ps3_tx_ctxs[device->ids.id];
+        bool was_on = ctx->valid_sent && ps3_conf_motors_on(&ctx->last_sent);
+        bool now_on = ps3_conf_motors_on((const struct bt_hidp_ps3_set_conf *)report);
+        int64_t now = esp_timer_get_time();
+
         memcpy(&ctx->last_sent, report, sizeof(ctx->last_sent));
         ctx->valid_sent = true;
         ctx->in_flight = true;
         ctx->dirty = false;
         ctx->stop_pending = false;
-        ctx->last_tx_us = esp_timer_get_time();
+        ctx->last_tx_us = now;
+
+        if (was_on && !now_on && !is_confirm) {
+            ctx->stop_confirm_pending = true;
+            ctx->stop_confirm_us = now;
+        }
+        else {
+            ctx->stop_confirm_pending = false;
+        }
     }
 }
 
@@ -138,7 +153,7 @@ void bt_hid_ps3_tick(void) {
 
     for (uint32_t i = 0; i < BT_MAX_DEV; i++) {
         struct ps3_tx_ctx *ctx = &ps3_tx_ctxs[i];
-        if (!ctx->dirty && !ctx->in_flight && !ctx->stop_pending) {
+        if (!ctx->dirty && !ctx->in_flight && !ctx->stop_pending && !ctx->stop_confirm_pending) {
             continue;
         }
 
@@ -162,10 +177,23 @@ void bt_hid_ps3_tick(void) {
         if (!ctx->in_flight && ctx->dirty && (now - ctx->last_tx_us) >= PS3_TX_MIN_INTERVAL_US) {
             struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
             if (!ctx->valid_sent || memcmp(bt_data->base.output, &ctx->last_sent, sizeof(ctx->last_sent)) != 0) {
-                bt_hid_cmd_ps3_send_now(device, bt_data->base.output);
+                bt_hid_cmd_ps3_send_now(device, bt_data->base.output, false);
             }
             else {
                 ctx->dirty = false;
+            }
+            continue;
+        }
+
+        if (!ctx->in_flight && !ctx->dirty && !ctx->stop_pending && ctx->stop_confirm_pending &&
+                (now - ctx->stop_confirm_us) >= PS3_STOP_CONFIRM_US) {
+            struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
+            const struct bt_hidp_ps3_set_conf *cur = (const struct bt_hidp_ps3_set_conf *)bt_data->base.output;
+            if (!ps3_conf_motors_on(cur)) {
+                bt_hid_cmd_ps3_send_now(device, bt_data->base.output, true);
+            }
+            else {
+                ctx->stop_confirm_pending = false;
             }
         }
     }
@@ -180,6 +208,10 @@ void bt_hid_cmd_ps3_set_conf(struct bt_dev *device, void *report) {
 
         if (ctx->in_flight && (now - ctx->last_tx_us) >= PS3_TX_HANDSHAKE_TMO_US) {
             ctx->in_flight = false;
+        }
+
+        if (ps3_conf_motors_on(new_conf)) {
+            ctx->stop_confirm_pending = false;
         }
 
         /*
@@ -219,7 +251,7 @@ void bt_hid_cmd_ps3_set_conf(struct bt_dev *device, void *report) {
         if (ctx->in_flight || (ctx->last_tx_us != 0 && (now - ctx->last_tx_us) < PS3_TX_MIN_INTERVAL_US)) {
             /*
              * DS3 drops SET_REPORT (0x52) sent while the previous control
-             * transaction is still in flight or within ~15-20 ms. Latch dirty
+             * transaction is still in flight or within ~15-30 ms. Latch dirty
              * so bt_hid_ps3_tick() / HIDP_HANDSHAKE flushes the latest report.
              */
             ctx->dirty = true;
@@ -227,7 +259,7 @@ void bt_hid_cmd_ps3_set_conf(struct bt_dev *device, void *report) {
             return;
         }
     }
-    bt_hid_cmd_ps3_send_now(device, report);
+    bt_hid_cmd_ps3_send_now(device, report, false);
     bt_host_tx_unlock();
 }
 
@@ -273,7 +305,7 @@ void bt_hid_ps3_hdlr(struct bt_dev *device, struct bt_hci_pkt *bt_hci_acl_pkt, u
                 if ((now - ctx->last_tx_us) >= PS3_TX_MIN_INTERVAL_US) {
                     struct bt_data *bt_data = &bt_adapter.data[device->ids.id];
                     if (!ctx->valid_sent || memcmp(bt_data->base.output, &ctx->last_sent, sizeof(ctx->last_sent)) != 0) {
-                        bt_hid_cmd_ps3_send_now(device, bt_data->base.output);
+                        bt_hid_cmd_ps3_send_now(device, bt_data->base.output, false);
                     }
                     else {
                         ctx->dirty = false;
