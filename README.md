@@ -1,4 +1,4 @@
-# BlueRetro — PlayStation 1 Custom Edition (v0.7.8)
+# BlueRetro — PlayStation 1 Custom Edition (v0.7.8.1)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/darthcloud/BlueRetro/refs/heads/master/static/PNGs/BRE_Logo_Color_Outline.png" alt="BlueRetro Logo" width="300">
@@ -79,8 +79,8 @@ Baseado no projeto de Jacques Gagnon ([BlueRetro](https://github.com/darthcloud/
 
 ### 11. Suporte Calibrado a DualShock 3 (Vibração + Indicador Analógico)
 * **Controle independente dos dois motores (`hf_motor_pwr`):** corrigido o mapeamento do byte 2 do relatório de saída `0x01` do DualShock 3 (que controla exclusivamente o motor pequeno/direito `0x00`/`0x01`, separado do motor grande/esquerdo `0x00`–`0xFF`), com duração contínua (`0xFF`) enquanto ativo — alinhado ao driver `hid-sony` do kernel Linux.
-* **Controle de fluxo no canal de controle HID (`SET_REPORT 0x52`):** diferente de DS4/DS5 (que usam canal de interrupção `0xA2`), o DualShock 3 recebe feedback de forma síncrona no canal de controle e descarta comandos enviados em rajada abaixo de ~15–20 ms. O driver passa a usar controle de fluxo por `HIDP_HANDSHAKE` (`in_flight` + `dirty` + watchdog de 80 ms + espaçamento mínimo de 20 ms) e deduplicação por estado efetivamente transmitido, mantendo DS4 e DS5 100% isolados e inalterados.
-* **Rajadas contínuas sem engasgos (`PS3_STOP_HOLD_US = 45 ms`):** paradas puras dos motores aguardam 45 ms antes de serem transmitidas; micro-intervalos de 1 a 2 quadros entre disparos (como a metralhadora em *Resident Evil 3*) são absorvidos automaticamente sem frear os motores, enquanto trocas rápidas de motor (como no teste de vibração de *Metal Gear Solid*) respondem de primeira.
+* **Controle de fluxo no canal de controle HID (`SET_REPORT 0x52`):** diferente de DS4/DS5 (que usam canal de interrupção `0xA2`), o DualShock 3 recebe feedback de forma síncrona no canal de controle e descarta comandos enviados em rajada abaixo de ~15–30 ms. O driver passa a usar controle de fluxo por `HIDP_HANDSHAKE` (`in_flight` + `dirty` + watchdog de 100 ms + espaçamento mínimo de 35 ms) e deduplicação por estado efetivamente transmitido, mantendo DS4 e DS5 100% isolados e inalterados.
+* **Rajadas contínuas e parada garantida (`PS3_STOP_HOLD_US = 45 ms`, `PS3_STOP_CONFIRM_US = 150 ms`):** paradas puras dos motores aguardam 45 ms antes de serem transmitidas, absorvendo micro-intervalos de 1 a 2 quadros entre disparos (como a metralhadora em *Resident Evil 3*) sem frear os motores; após a parada efetiva, um único `STOP` de confirmação é emitido 150 ms depois se o controle seguir em repouso, eliminando qualquer risco de motor residual preso após rajadas rápidas. Trocas instantâneas de motor (como no teste de vibração de *Metal Gear Solid*) respondem de primeira.
 * **Indicador visual de modo Analógico por hardware (4 LEDs vermelhos):**
   * **Modo Analógico (ON):** LED do jogador **fixo aceso** (`duty_off = 0x00`, `duty_on = 0x32`).
   * **Modo Digital (OFF):** LED do jogador **aceso por ~2 s com piscada breve de 200 ms** (`duty_off = 0x14`, `duty_on = 0xC8`), executado pelo temporizador interno do próprio DualShock 3 com zero tráfego Bluetooth adicional.
@@ -164,7 +164,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 > [!NOTE]
 > O script de atualização sem fio (`ble_ota_update.py`) requer a biblioteca Python `bleak` (`pip install bleak`).
 
-1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.8_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
+1. Baixe o pacote **[`BlueRetro_PS1_Custom_v0.7.8.1_Package.zip`](https://github.com/Schickacka/BlueRetro/releases)** na aba Releases.
 2. Ligue o PlayStation 1 com os controles Bluetooth desligados.
 3. Execute o arquivo **`flash_bluetooth_ota.bat`** (Windows).
 4. O script localizará o dispositivo via Bluetooth LE e efetuará a gravação em aproximadamente 50 segundos. O receptor reiniciará automaticamente com o firmware atualizado.
@@ -173,7 +173,7 @@ Se o BlueRetro já estiver instalado no console, o procedimento pode ser realiza
 
 ### Método 2: Gravação via Cabo USB (Windows)
 1. Conecte o ESP32 ao computador via cabo micro-USB.
-2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.8_Package.zip`**.
+2. Extraia o conteúdo de **`BlueRetro_PS1_Custom_v0.7.8.1_Package.zip`**.
 3. Execute **`flash_windows.bat`** e informe a porta serial correspondente (exemplo: `COM3`, `COM4`, `COM6`).
 
 ### Método 3: Gravação Manual via Linha de Comando (esptool)
@@ -209,7 +209,7 @@ git clone --recursive https://github.com/Schickacka/BlueRetro.git
 cd BlueRetro
 
 # Gerar arquivo de versão do firmware customizado
-echo "v0.7.8 ps1-custom" > version.txt
+echo "v0.7.8.1 ps1-custom" > version.txt
 
 # Carregar arquivo de configuração para PlayStation
 cp configs/hw1/playstation sdkconfig
